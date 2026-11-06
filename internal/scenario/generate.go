@@ -218,7 +218,7 @@ func init() {
 
 	register(Scenario{
 		ID: "duplicates", Title: "Duplicates and conflicts",
-		Description: "Each reading is sent twice. The repeat must come back as a duplicate. Every third reading is then sent a third time with one value changed, which must come back as a conflict (the first reading is kept).",
+		Description: "Each reading is sent twice. The repeat must come back as a duplicate. Every third reading is then sent a third time with one value changed, which must come back as a conflict (HTTP 200, or 409 if the tenant's conflict setting says so).",
 		Build: func(p Params) []Step {
 			d, n, end := newDevice(p.Seed), minInt(points(p), 6), now(p)
 			var steps []Step
@@ -233,7 +233,7 @@ func init() {
 				if i%3 == 0 {
 					m["Humidity"] = map[string]any{"Percentage": 99.9}
 					steps = append(steps, Step{Name: fmt.Sprintf("reading %d changed", i+1), Body: marshal(m),
-						Expect: Expect{HTTP: []int{200}, Status: []string{"conflict"}, Flags: []string{"DUPLICATE_CONFLICT"}, Ack: true, Note: "different content, same device and time"}})
+						Expect: Expect{HTTP: []int{200, 409}, Status: []string{"conflict"}, Flags: []string{"DUPLICATE_CONFLICT"}, Ack: true, Note: "different content, same device and time; the tenant's conflict policy decides 200 or 409"}})
 				}
 			}
 			return steps
