@@ -1,0 +1,19 @@
+{{define "loadrow"}}
+<div class="card loadrow" data-n="{{.N}}">
+  <div class="row" style="justify-content:space-between">
+    <strong>Load {{.N}}</strong>
+    {{if .Removable}}<button type="button" class="linkbtn" onclick="this.closest('.loadrow').remove()">Remove this load</button>{{end}}
+  </div>
+  <div class="scenarios">
+    {{$n := .N}}
+    {{range $s := .Scenarios}}
+    <label><input type="checkbox" name="load{{$n}}_scenarios" value="{{$s.ID}}" {{if and (eq $n 1) (eq $s.ID "route")}}checked{{end}}> <b>{{$s.Title}}</b></label>
+    {{end}}
+  </div>
+  <div class="row">
+    <label>Requests/s <input type="number" name="load{{.N}}_rate" value="20" min="1" max="{{rate .MaxRate}}" style="width:100px"></label>
+    <label>Duration (seconds) <input type="number" name="load{{.N}}_duration" value="15" min="1" max="{{.MaxSeconds}}" style="width:110px"></label>
+    <label>Start at (leave empty = now) <input type="time" step="1" name="load{{.N}}_start" style="width:140px"></label>
+  </div>
+</div>
+{{end}}

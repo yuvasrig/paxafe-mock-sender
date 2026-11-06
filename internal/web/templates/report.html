@@ -55,13 +55,26 @@
 </div>
 {{end}}
 
+{{if $r.Loads}}
+<h3>Loads in this plan</h3>
 <div class="scroll">
 <table>
-  <thead><tr><th>#</th><th>Request</th><th>HTTP</th><th>Status</th><th>Flags</th><th>ms</th><th>Check</th></tr></thead>
+  <thead><tr><th>Load</th><th>Scenarios</th><th>Rate</th><th>Duration</th><th>Started</th><th>Sent</th><th>Failed</th><th>Throughput</th><th>p95</th></tr></thead>
+  <tbody>
+  {{range $r.Loads}}<tr><td>{{.Index}}</td><td>{{.Title}}</td><td>{{rate .Rate}}/s</td><td>{{rate .Duration}} s</td><td>+{{offset .StartedAt $r.Started}} s</td><td>{{.Sent}}</td><td>{{if .Failed}}<span class="fail">{{.Failed}}</span>{{else}}0{{end}}</td><td>{{rate .ThroughputPerSec}}/s</td><td>{{ms .P95Ms}} ms</td></tr>{{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+<div class="scroll">
+<table>
+  <thead><tr><th>#</th>{{if $r.Loads}}<th>Load</th>{{end}}<th>Request</th><th>HTTP</th><th>Status</th><th>Flags</th><th>ms</th><th>Check</th></tr></thead>
   <tbody>
   {{range .Rows}}
   <tr class="row-click" hx-get="/runs/{{$r.RunID}}/{{.Index}}" hx-target="#detail" hx-trigger="click">
     <td>{{inc .Index}}</td>
+    {{if $r.Loads}}<td>{{.Load}}</td>{{end}}
     <td>{{.Name}}{{if .Note}}<br><span class="muted">{{.Note}}</span>{{end}}</td>
     <td>{{if .HTTP}}{{.HTTP}}{{else}}–{{end}}</td>
     <td>{{.Status}}</td>

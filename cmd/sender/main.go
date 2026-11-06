@@ -29,6 +29,8 @@ const usage = `usage:
   sender list                                    list scenarios
   sender run --scenario ID [flags]               run a scenario and print the results
   sender run --scenario ID,ID,... [flags]        generate load from several scenarios at once (uses --rate and --duration)
+  sender run --load "scenarios=a,b rate=20 duration=30s start=+10s" --load "..."
+                                                 a plan: each load has its own scenarios, rate, duration and start (default now)
       --url URL        API base URL           (default $API_BASE_URL)
       --key KEY        API key                (default $SENDER_API_KEY)
       --rate N         load: requests per second (default 10)
@@ -130,8 +132,13 @@ func runCmd(args []string, stdout, stderr io.Writer) int {
 	verify := fs.Int("verify", 300, "most events to look up afterwards")
 	wait := fs.Duration("wait", time.Minute, "async tenants: how long to wait for workers to finish each queued event")
 	asJSON := fs.Bool("json", false, "print the full report as JSON")
+	var loadSpecs stringList
+	fs.Var(&loadSpecs, "load", "a load of a plan, repeatable: \"scenarios=route,fault rate=20 duration=30s start=+10s\" (start: now, +30s, 14:30:00 or an RFC 3339 time; default now)")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	if len(loadSpecs) > 0 {
+		return runPlanCmd(loadSpecs, *id, *url, *key, *account, *verify, *wait, *asJSON, stdout, stderr)
 	}
 	var sc scenario.Scenario
 	var ok bool
@@ -192,6 +199,69 @@ func runCmd(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// stringList is a flag that can be given several times.
+type stringList []string
+
+func (l *stringList) String() string     { return strings.Join(*l, "; ") }
+func (l *stringList) Set(v string) error { *l = append(*l, v); return nil }
+
+// runPlanCmd runs a plan of loads given with --load, each with its own scenarios, rate, duration and start.
+func runPlanCmd(specs []string, scenarioFlag, url, key string, account int64, verify int, wait time.Duration, asJSON bool, stdout, stderr io.Writer) int {
+	now := time.Now()
+	var loads []runner.Load
+	for i, spec := range specs {
+		l, err := runner.ParseLoad(spec, now)
+		if err != nil {
+			fmt.Fprintf(stderr, "--load %d: %v\n", i+1, err)
+			return 2
+		}
+		loads = append(loads, l)
+	}
+	switch {
+	case scenarioFlag != "":
+		fmt.Fprintln(stderr, "use either --scenario or --load, not both")
+		return 2
+	case url == "":
+		fmt.Fprintln(stderr, "--url (or API_BASE_URL) is required")
+		return 2
+	case key == "":
+		fmt.Fprintln(stderr, "--key (or SENDER_API_KEY) is required")
+		return 2
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	client := api.New(url)
+	fmt.Fprintf(stderr, "waking %s … ", url)
+	wakeCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+	took, err := client.Wake(wakeCtx)
+	cancel()
+	if err != nil {
+		fmt.Fprintln(stderr, "failed:", err)
+		return 1
+	}
+	fmt.Fprintf(stderr, "up in %.1fs\n", took.Seconds())
+
+	rep, err := runner.RunPlan(ctx, runner.Config{
+		Client: client, Key: key, RunID: "cli-" + strconv.FormatInt(time.Now().UnixMilli(), 36), VerifyCap: verify, AsyncWait: wait,
+		Params: scenario.Params{Account: account, Points: 12, Now: time.Now().UTC().Truncate(time.Second), Seed: time.Now().UnixNano()},
+	}, loads)
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 2
+	}
+	if asJSON {
+		enc := json.NewEncoder(stdout)
+		enc.SetIndent("", "  ")
+		_ = enc.Encode(rep)
+	} else {
+		printReport(stdout, rep, true)
+	}
+	if !rep.Summary.OK() {
+		return 1
+	}
+	return 0
+}
+
 func printReport(w io.Writer, rep *runner.Report, load bool) {
 	fmt.Fprintf(w, "\n%s (run %s, %.2fs)\n\n", rep.Title, rep.RunID, rep.Elapsed.Seconds())
 	const maxRows = 60
@@ -212,6 +282,14 @@ func printReport(w io.Writer, rep *runner.Report, load bool) {
 		fmt.Fprintf(tw, "%d\t%s\t%d\t%s\t%s\t%.1f\t%s\n", r.Index+1, r.Name, r.HTTP, r.Status, strings.Join(r.Flags, ","), r.LatencyMs, check)
 	}
 	_ = tw.Flush()
+
+	if len(rep.Loads) > 0 {
+		fmt.Fprintln(w, "\nloads:")
+		for _, l := range rep.Loads {
+			fmt.Fprintf(w, "  %d  %s · %.0f/s for %.0fs · started +%.1fs · %d sent, %d failed · %.1f/s · p95 %.1f ms\n",
+				l.Index, l.Title, l.Rate, l.Duration, l.StartedAt.Sub(rep.Started).Seconds(), l.Sent, l.Failed, l.ThroughputPerSec, l.P95Ms)
+		}
+	}
 
 	s := rep.Summary
 	fmt.Fprintf(w, "\n%d sent · %d acknowledged · %d processed · %d rejected (expected) · %d missing", s.Sent, s.Acknowledged, s.Processed, s.ExpectedRejections, s.Missing)

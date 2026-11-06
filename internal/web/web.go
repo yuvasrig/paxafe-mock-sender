@@ -32,6 +32,7 @@ const (
 	maxRows         = 200
 	keepRuns        = 20
 	runTimeout      = 100 * time.Second
+	planTimeout     = 200 * time.Second // a plan may start loads up to a minute ahead, then verifies
 	wakeTimeout     = 90 * time.Second
 )
 
@@ -62,6 +63,7 @@ func New(client *api.Client, defaultKey string, account int64, log *slog.Logger)
 		"tempChart": TempChart,
 		"pathChart": PathChart,
 		"num":       func(p *float64) string { return numStr(p, 3) },
+		"offset":    func(at, from time.Time) string { return strconv.FormatFloat(at.Sub(from).Seconds(), 'f', 1, 64) },
 		"coord":     func(p *float64) string { return numStr(p, 6) },
 	}
 	t, err := template.New("").Funcs(funcs).ParseFS(templateFS, "templates/*.html")
@@ -90,6 +92,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.index)
 	mux.HandleFunc("GET /wake", s.wake)
 	mux.HandleFunc("POST /run", s.run)
+	mux.HandleFunc("GET /load-row", s.loadRowHandler)
 	mux.HandleFunc("GET /runs/{id}/{n}", s.detail)
 	mux.HandleFunc("GET /runs/{id}/compare.csv", s.compareCSV)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -117,12 +120,15 @@ type indexData struct {
 	MaxRate      float64
 	MaxSeconds   int
 	MaxPoints    int
+	LoadRow      loadRowData // the first load row of the load generator
+	MaxLoads     int
 }
 
 func (s *Server) index(w http.ResponseWriter, _ *http.Request) {
 	s.render(w, "index.html", indexData{
 		APIBase: s.Client.Base, Scenarios: scenario.All(), HasServerKey: s.DefaultKey != "",
 		MaxRate: maxLoadRate, MaxSeconds: int(maxLoadDuration.Seconds()), MaxPoints: maxPoints,
+		LoadRow: s.loadRow(1), MaxLoads: maxLoads,
 	})
 }
 
@@ -146,19 +152,14 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request) {
 		s.message(w, http.StatusBadRequest, "Could not read the form.")
 		return
 	}
-	var sc scenario.Scenario
-	if mix := r.Form["mix"]; len(mix) > 0 { // the load generator: several scenarios at once
-		var err error
-		if sc, err = scenario.Mix(mix); err != nil {
-			s.message(w, http.StatusBadRequest, "Load generator: "+err.Error()+".")
-			return
-		}
-	} else {
-		var ok bool
-		if sc, ok = scenario.Get(r.FormValue("scenario")); !ok {
-			s.message(w, http.StatusBadRequest, "Pick a scenario.")
-			return
-		}
+	if planRequested(r.Form) { // the load generator: a plan of loads
+		s.runPlan(w, r)
+		return
+	}
+	sc, ok := scenario.Get(r.FormValue("scenario"))
+	if !ok {
+		s.message(w, http.StatusBadRequest, "Pick a scenario.")
+		return
 	}
 	key := strings.TrimSpace(r.FormValue("key"))
 	if key == "" {

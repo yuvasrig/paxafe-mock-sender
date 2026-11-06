@@ -28,15 +28,27 @@ go run ./cmd/sender run --scenario route --json
 ```
 Exit status is 1 if any check fails or any acknowledged payload is missing, so it can gate a deploy.
 
-## Load from several scenarios
+## Load plans
 
-In the web UI, the **Load generator** card has a checkbox per scenario: tick any number, pick a rate and duration, and requests are drawn evenly from all ticked scenarios. From the CLI, list them with commas:
+The **Load generator** builds a plan of up to six loads. Each load has its own:
+
+- **scenarios**: tick as many as you like; the load's requests are drawn evenly from all of them;
+- **rate** (requests per second) and **duration**;
+- **start time**: a time of day on your clock, or leave it empty to start **now** (the default).
+
+Loads run on their own schedules, at the same time where they overlap, and are reported together: one summary, one completeness check, the sent-vs-stored comparison, and a line per load (start offset, sent, failed, throughput, p95). The web UI lets a load start up to a minute ahead and a plan span at most 90 seconds; the CLI has no such limit.
+
+From the CLI, give each load with `--load` (repeat it for more loads):
 
 ```
-sender run --scenario route,fault,malformed,duplicates --rate 30 --duration 30s --url ... --key ...
+sender run --url ... --key ... \
+  --load "scenarios=route,fault rate=20 duration=30s" \
+  --load "scenarios=malformed,duplicates rate=10 duration=20s start=+15s"
 ```
 
-Scripted scenarios are replayed with a new seed on each pass, so a long run sends new payloads instead of repeating one. Because requests interleave, a mixed run checks what does not depend on order: the HTTP answer, that the payload was acknowledged, and (afterwards) that every acknowledged event can be found again, plus the sent-vs-stored comparison. Per-request status and flag expectations belong to the single-scenario runs.
+`start` is `now` (the default), an offset such as `+15s`, a time of day on this machine (`14:30:00`) or an RFC 3339 time. `rate` defaults to 10 and `duration` to 10s. A single `--scenario a,b` with `--rate` and `--duration` is still the short way to run one mixed load.
+
+Scripted scenarios are replayed with a new seed on each pass, so a long load sends new payloads instead of repeating one. Because requests interleave, a load checks only what does not depend on order: the HTTP answer, that the payload was acknowledged, and (afterwards) that every acknowledged event can be found again, plus the comparison. Per-request status and flag expectations belong to the single-scenario runs.
 
 ## Async tenants
 

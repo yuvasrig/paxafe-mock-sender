@@ -59,6 +59,7 @@ type Result struct {
 	Got          *Sample  `json:"processed,omitempty"` // what the API stored for it
 	Compare      string   `json:"compare,omitempty"`   // match, differs, dropped or not stored
 	CompareNote  string   `json:"compare_note,omitempty"`
+	Load         int      `json:"load,omitempty"`   // which load of a plan sent it (1-based)
 	Queued       bool     `json:"queued,omitempty"` // the API answered 202: an async tenant, processed by a worker later
 
 	Verified     bool   `json:"verified"`
@@ -114,6 +115,7 @@ type Report struct {
 	Elapsed    time.Duration `json:"elapsed"`
 	Results    []Result      `json:"results"`
 	Summary    Summary       `json:"summary"`
+	Loads      []LoadSummary `json:"loads,omitempty"` // for a plan: what each load did
 	Notes      []string      `json:"notes,omitempty"`
 }
 

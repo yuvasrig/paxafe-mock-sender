@@ -116,3 +116,32 @@ func TestRunMixesSeveralScenarios(t *testing.T) {
 		t.Fatalf("%d %s", code, errb.String())
 	}
 }
+
+func TestRunPlanFromRepeatedLoadFlags(t *testing.T) {
+	fake := testfake.New(t)
+	var out, errb bytes.Buffer
+	code := realMain([]string{"run", "--url", fake.URL, "--key", testfake.Key,
+		"--load", "scenarios=route,fault rate=10 duration=1s",
+		"--load", "scenarios=duplicates,route rate=10 duration=1s start=+1s"}, &out, &errb)
+	text := out.String()
+	if code != 0 || !strings.Contains(text, "Load plan: 2 loads") || !strings.Contains(text, "loads:") || strings.Count(text, " sent, ") < 2 {
+		t.Fatalf("%d\n%s\n%s", code, text, errb.String())
+	}
+	if !strings.Contains(text, "started +0.0s") && !strings.Contains(text, "started +0.") {
+		t.Fatalf("the first load starts now: %s", text)
+	}
+	if !strings.Contains(text, "started +1.") {
+		t.Fatalf("the second load starts one second later: %s", text)
+	}
+	for name, args := range map[string][]string{
+		"bad spec":   {"run", "--url", fake.URL, "--key", testfake.Key, "--load", "rate=5"},
+		"unknown":    {"run", "--url", fake.URL, "--key", testfake.Key, "--load", "scenarios=nope"},
+		"both flags": {"run", "--url", fake.URL, "--key", testfake.Key, "--scenario", "route", "--load", "scenarios=route"},
+		"no key":     {"run", "--url", fake.URL, "--load", "scenarios=route"},
+	} {
+		var o, e bytes.Buffer
+		if code := realMain(args, &o, &e); code != 2 {
+			t.Errorf("%s: exit %d, want 2 (%s)", name, code, e.String())
+		}
+	}
+}

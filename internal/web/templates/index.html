@@ -36,6 +36,7 @@
   table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; font-size:13px; }
   th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; } th { color:var(--muted); font-weight:600; }
   tr.row-click { cursor:pointer; } tr.row-click:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .linkbtn { background:none; border:0; color:var(--accent, #2563eb); cursor:pointer; padding:0; }
   .chip { display:inline-block; border-radius:6px; padding:0 6px; margin:1px 2px 1px 0; background:var(--warnbg); color:var(--warn); font:12px ui-monospace, Menlo, monospace; }
   .pass { color:var(--ok); font-weight:700; } .fail { color:var(--bad); font-weight:700; }
   .scroll { overflow-x:auto; } pre { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px; overflow:auto; max-height:360px; }
@@ -71,22 +72,20 @@
     </div>
   </form>
 
-  <form hx-post="/run" hx-target="#results" hx-indicator="#spinner2" hx-disabled-elt="find button">
+  <form hx-post="/run" hx-target="#results" hx-indicator="#spinner2" hx-disabled-elt="find button.go" hx-vals='js:{tzoffset: new Date().getTimezoneOffset()}'>
     <h2>Load generator</h2>
-    <p class="muted">Tick several scenarios to generate load from all of them at once: requests are drawn evenly from the ticked scenarios at the rate you choose. The report shows throughput and latency, and still checks that every acknowledged payload can be found again.</p>
-    <div class="scenarios">
-      {{range $s := .Scenarios}}
-      <label><input type="checkbox" name="mix" value="{{$s.ID}}" {{if eq $s.ID "route"}}checked{{end}}> <b>{{$s.Title}}</b></label>
-      {{end}}
+    <p class="muted">Build a load plan. Each load has its own scenarios (tick several and requests are drawn evenly from all of them), rate, duration and start time. Loads run on their own schedules, together when they overlap, and are reported together with a line for each. Start time is a time of day on your clock; leave it empty to start now. A plan may start loads up to a minute ahead and span at most 90 seconds; use the CLI for longer runs.</p>
+    <div id="loads">{{template "loadrow" .LoadRow}}</div>
+    <div class="row" style="margin:10px 0">
+      <button type="button" hx-get="/load-row" hx-target="#loads" hx-swap="beforeend" hx-disabled-elt="this" hx-indicator="this" hx-vals='js:{n: Math.max(0, ...[...document.querySelectorAll(".loadrow")].map(e => +e.dataset.n)) + 1}'>+ Add another load</button>
+      <span class="muted">up to {{.MaxLoads}} loads</span>
     </div>
     <div class="card">
       <div class="row">
         <label>API key
           <input type="password" name="key" autocomplete="off" placeholder="{{if .HasServerKey}}empty = the sender's own key{{else}}required{{end}}">
         </label>
-        <label>Requests/s <input type="number" name="rate" value="20" min="1" max="{{rate .MaxRate}}" style="width:100px"></label>
-        <label>Seconds <input type="number" name="duration" value="15" min="1" max="{{.MaxSeconds}}" style="width:90px"></label>
-        <button type="submit">Generate load</button><span id="spinner2" class="busy">running…</span>
+        <button type="submit" class="go">Run the plan</button><span id="spinner2" class="busy">running…</span>
       </div>
     </div>
   </form>
