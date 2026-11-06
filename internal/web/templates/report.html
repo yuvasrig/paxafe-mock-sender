@@ -15,6 +15,35 @@
 </div>
 {{range $r.Notes}}<p class="muted">{{.}}</p>{{end}}
 
+{{if $s.Compared}}
+<h3>What was sent vs what the API stored</h3>
+<p class="muted">Every acknowledged event is read back from the API and its temperature and position are compared with what this sender sent. Values may differ only by the API's output rounding (temperature 2 decimals, coordinates 6). A value a rule replaced is <i>fixed</i> and a value a rule nulled is <i>dropped</i>; both carry a flag saying why. Only an unexplained change is a <i>differ</i>.</p>
+<div class="stats">
+  <div class="stat"><b>{{$s.Compared}}</b><span>Compared</span></div>
+  <div class="stat"><b>{{$s.Matched}}</b><span>Match</span></div>
+  <div class="stat {{if $s.Differed}}bad{{end}}"><b>{{$s.Differed}}</b><span>Differ (unexplained)</span></div>
+  <div class="stat"><b>{{$s.Fixed}}</b><span>Fixed by a rule</span></div>
+  <div class="stat"><b>{{$s.Dropped}}</b><span>Dropped by a rule</span></div>
+</div>
+{{tempChart $r.Results}}
+<div style="height:10px"></div>
+{{pathChart $r.Results}}
+<div class="scroll">
+<table>
+  <thead><tr><th>#</th><th>Verdict</th><th>Sent °C</th><th>Stored °C</th><th>Sent lat, lon</th><th>Stored lat, lon</th><th>Why</th></tr></thead>
+  <tbody>
+  {{range .Cmp}}<tr>
+    <td>{{inc .Index}}</td><td>{{.Compare}}</td>
+    <td>{{num .Sent.Temp}}</td><td>{{if .Got}}{{num .Got.Temp}}{{else}}–{{end}}</td>
+    <td>{{coord .Sent.Lat}}, {{coord .Sent.Lon}}</td><td>{{if .Got}}{{coord .Got.Lat}}, {{coord .Got.Lon}}{{else}}–{{end}}</td>
+    <td>{{.CompareNote}}{{range .Flags}}<span class="chip">{{.}}</span>{{end}}</td>
+  </tr>{{end}}
+  </tbody>
+</table>
+</div>
+<p><a href="/runs/{{$r.RunID}}/compare.csv">Download the full comparison (CSV)</a>{{if gt $s.Compared 50}} · showing the first 50 rows{{end}}</p>
+{{end}}
+
 {{if .Load}}
 <div class="stats">
   <div class="stat"><b>{{rate $s.ThroughputPerSec}}/s</b><span>Throughput</span></div>

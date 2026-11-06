@@ -6,6 +6,7 @@ package web
 import (
 	"context"
 	"embed"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -51,13 +52,17 @@ type Server struct {
 // New builds a server.
 func New(client *api.Client, defaultKey string, account int64, log *slog.Logger) (*Server, error) {
 	funcs := template.FuncMap{
-		"ms":      func(f float64) string { return strconv.FormatFloat(f, 'f', 1, 64) },
-		"pct":     func(f float64) string { return strconv.FormatFloat(f*100, 'f', 1, 64) + "%" },
-		"rate":    func(f float64) string { return strconv.FormatFloat(f, 'f', 1, 64) },
-		"seconds": func(d time.Duration) string { return strconv.FormatFloat(d.Seconds(), 'f', 2, 64) },
-		"inc":     func(i int) int { return i + 1 },
-		"pretty":  pretty,
-		"join":    strings.Join,
+		"ms":        func(f float64) string { return strconv.FormatFloat(f, 'f', 1, 64) },
+		"pct":       func(f float64) string { return strconv.FormatFloat(f*100, 'f', 1, 64) + "%" },
+		"rate":      func(f float64) string { return strconv.FormatFloat(f, 'f', 1, 64) },
+		"seconds":   func(d time.Duration) string { return strconv.FormatFloat(d.Seconds(), 'f', 2, 64) },
+		"inc":       func(i int) int { return i + 1 },
+		"pretty":    pretty,
+		"join":      strings.Join,
+		"tempChart": TempChart,
+		"pathChart": PathChart,
+		"num":       func(p *float64) string { return numStr(p, 3) },
+		"coord":     func(p *float64) string { return numStr(p, 6) },
 	}
 	t, err := template.New("").Funcs(funcs).ParseFS(templateFS, "templates/*.html")
 	if err != nil {
@@ -86,6 +91,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /wake", s.wake)
 	mux.HandleFunc("POST /run", s.run)
 	mux.HandleFunc("GET /runs/{id}/{n}", s.detail)
+	mux.HandleFunc("GET /runs/{id}/compare.csv", s.compareCSV)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -186,7 +192,11 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request) {
 	if len(rows) > maxRows {
 		rows, truncated = rows[:maxRows], true
 	}
-	s.render(w, "report.html", map[string]any{"R": rep, "Rows": rows, "Truncated": truncated, "Load": sc.Load})
+	cmp := compared(rep.Results)
+	if len(cmp) > maxCompareRows {
+		cmp = cmp[:maxCompareRows]
+	}
+	s.render(w, "report.html", map[string]any{"R": rep, "Rows": rows, "Truncated": truncated, "Load": sc.Load, "Cmp": cmp})
 }
 
 func (s *Server) message(w http.ResponseWriter, status int, msg string) {
@@ -265,4 +275,40 @@ func clampFloat(v, lo, hi float64) float64 {
 		return hi
 	}
 	return v
+}
+
+const maxCompareRows = 50
+
+func numStr(p *float64, places int) string {
+	if p == nil {
+		return "–"
+	}
+	return strconv.FormatFloat(*p, 'f', places, 64)
+}
+
+// compareCSV is the whole comparison of one run, one row per compared event, for judges who want to open it in a
+// spreadsheet or diff it.
+func (s *Server) compareCSV(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	rep := s.runs[r.PathValue("id")]
+	s.mu.Unlock()
+	if rep == nil {
+		s.message(w, http.StatusNotFound, "That run is no longer available.")
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+rep.RunID+`-sent-vs-processed.csv"`)
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{"n", "request", "event_id", "verdict", "note", "status", "flags",
+		"sent_ts", "sent_temp_c", "stored_temp_c", "sent_lat", "stored_lat", "sent_lon", "stored_lon"})
+	for _, res := range compared(rep.Results) {
+		got := res.Got
+		if got == nil {
+			got = &runner.Sample{}
+		}
+		_ = cw.Write([]string{strconv.Itoa(res.Index + 1), res.Name, res.EventID, res.Compare, res.CompareNote, res.StoredStatus, strings.Join(res.Flags, " "),
+			strconv.FormatInt(res.Sent.TS, 10), numStr(res.Sent.Temp, 3), numStr(got.Temp, 3),
+			numStr(res.Sent.Lat, 6), numStr(got.Lat, 6), numStr(res.Sent.Lon, 6), numStr(got.Lon, 6)})
+	}
+	cw.Flush()
 }

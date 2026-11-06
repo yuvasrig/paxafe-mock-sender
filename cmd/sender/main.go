@@ -213,6 +213,9 @@ func printReport(w io.Writer, rep *runner.Report, load bool) {
 		fmt.Fprintf(w, " · %d not processed", s.NotProcessed)
 	}
 	fmt.Fprintf(w, "\nchecks: %d passed, %d failed\n", s.Passed, s.Failed)
+	if s.Compared > 0 {
+		fmt.Fprintf(w, "sent vs stored: %d compared · %d match · %d fixed by a rule · %d dropped by a rule · %d differ (unexplained)\n", s.Compared, s.Matched, s.Fixed, s.Dropped, s.Differed)
+	}
 	if load {
 		fmt.Fprintf(w, "throughput %.1f/s · p50 %.1f ms · p95 %.1f ms · p99 %.1f ms · max %.1f ms · errors %.1f%%\n",
 			s.ThroughputPerSec, s.P50Ms, s.P95Ms, s.P99Ms, s.MaxMs, s.ErrorRate*100)

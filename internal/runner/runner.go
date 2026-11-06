@@ -55,6 +55,10 @@ type Result struct {
 	Note         string   `json:"note,omitempty"`
 	NetworkError string   `json:"network_error,omitempty"`
 	Retries      int      `json:"retries,omitempty"`
+	Sent         *Sample  `json:"sent,omitempty"`      // the temperature and position we sent
+	Got          *Sample  `json:"processed,omitempty"` // what the API stored for it
+	Compare      string   `json:"compare,omitempty"`   // match, differs, dropped or not stored
+	CompareNote  string   `json:"compare_note,omitempty"`
 	Queued       bool     `json:"queued,omitempty"` // the API answered 202: an async tenant, processed by a worker later
 
 	Verified     bool   `json:"verified"`
@@ -73,7 +77,12 @@ type Result struct {
 type Summary struct {
 	Sent               int     `json:"sent"`
 	Acknowledged       int     `json:"acknowledged"`
-	Queued             int     `json:"queued"` // acknowledged with 202 and judged after the workers finished them
+	Compared           int     `json:"compared"` // events whose stored values were compared with what was sent
+	Matched            int     `json:"matched"`
+	Differed           int     `json:"differed"` // stored differently with nothing to explain it
+	Fixed              int     `json:"fixed"`    // stored differently, and a flag says a rule changed it
+	Dropped            int     `json:"dropped"`  // sent, but nulled by a rule
+	Queued             int     `json:"queued"`   // acknowledged with 202 and judged after the workers finished them
 	Processed          int     `json:"processed"`
 	ExpectedRejections int     `json:"expected_rejections"`
 	Missing            int     `json:"missing"`
@@ -195,6 +204,9 @@ func execute(ctx context.Context, cfg Config, i int, st scenario.Step, keepDetai
 			r.Note += "; "
 		}
 		r.Note += fmt.Sprintf("rate limited (429), succeeded after %d retr%s", resp.Retries, map[bool]string{true: "y", false: "ies"}[resp.Retries == 1])
+	}
+	if smp, ok := sampleOfRequest(st.Body); ok {
+		r.Sent = &smp
 	}
 	ack, parsed := resp.Parse()
 	if parsed {
@@ -357,12 +369,15 @@ func verify(ctx context.Context, cfg Config, results []Result) int {
 				awaitWorkers(ctx, cfg, &results[i])
 				return
 			}
-			status, found, err := cfg.Client.EventStatus(ctx, cfg.Key, results[i].EventID)
+			info, found, err := cfg.Client.Event(ctx, cfg.Key, results[i].EventID)
 			if err != nil {
 				results[i].LookupError = err.Error()
 				return
 			}
-			results[i].Verified, results[i].Found, results[i].StoredStatus = true, found, status
+			results[i].Verified, results[i].Found, results[i].StoredStatus = true, found, info.Status
+			if found {
+				results[i].attach(info)
+			}
 		}(i)
 	}
 	wg.Wait()
@@ -405,6 +420,7 @@ func awaitWorkers(ctx context.Context, cfg Config, r *Result) {
 		return // the summary reports it as missing or not processed
 	}
 	r.Status, r.Flags = info.Status, info.Flags
+	r.attach(info)
 	var why []string
 	if len(r.Expect.Status) > 0 && !containsStr(r.Expect.Status, info.Status) {
 		why = append(why, fmt.Sprintf("final status %q, want %v", info.Status, r.Expect.Status))
@@ -437,6 +453,22 @@ func summarize(results []Result, elapsed time.Duration) Summary {
 		}
 		if r.Queued {
 			s.Queued++
+		}
+		switch r.Compare {
+		case "":
+		case VerdictMatch:
+			s.Compared++
+			s.Matched++
+		case VerdictDiffers:
+			s.Compared++
+			s.Differed++
+		case VerdictFixed:
+			s.Compared++
+			s.Fixed++
+		case VerdictDropped:
+			s.Compared++
+			s.Dropped++
+		default: // not stored: nothing to compare
 		}
 		if r.Pass && r.ExpectRejection {
 			s.ExpectedRejections++

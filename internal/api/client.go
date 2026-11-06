@@ -131,6 +131,12 @@ func (c *Client) PostRetry(ctx context.Context, key, requestID string, body []by
 type EventInfo struct {
 	Status string
 	Flags  []string
+
+	// What the API stored: nil when the event has no sensor or location record, or the value was dropped.
+	HasProcessed bool
+	TS           int64
+	Temp         *float64
+	Lat, Lon     *float64
 }
 
 // EventStatus returns the stored status of an event ("pending" if it has no outcome yet).
@@ -174,11 +180,29 @@ func decodeEvent(code int, b []byte) (info EventInfo, found bool, err error) {
 			Flags  []struct {
 				Code string `json:"code"`
 			} `json:"flags"`
+			Sensor *struct {
+				Timestamp   int64    `json:"timestamp"`
+				Temperature *float64 `json:"temperature"`
+			} `json:"sensor"`
+			Location *struct {
+				Timestamp int64    `json:"timestamp"`
+				Latitude  *float64 `json:"latitude"`
+				Longitude *float64 `json:"longitude"`
+			} `json:"location"`
 		}
 		if err := json.Unmarshal(b, &ev); err != nil {
 			return EventInfo{}, false, fmt.Errorf("decode event: %w", err)
 		}
 		info.Status = ev.Status
+		if ev.Sensor != nil {
+			info.HasProcessed, info.TS, info.Temp = true, ev.Sensor.Timestamp, ev.Sensor.Temperature
+		}
+		if ev.Location != nil {
+			info.HasProcessed, info.Lat, info.Lon = true, ev.Location.Latitude, ev.Location.Longitude
+			if info.TS == 0 {
+				info.TS = ev.Location.Timestamp
+			}
+		}
 		for _, f := range ev.Flags {
 			info.Flags = append(info.Flags, f.Code)
 		}
