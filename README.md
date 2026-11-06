@@ -7,16 +7,16 @@ that every payload the API acknowledged can be found again: *N sent · N acknowl
 ## Scenarios
 | ID | What it sends | Expected |
 |---|---|---|
-| `samples` | the 13 provided samples | each sample's expected status and flags (first run, or `duplicate` on a re-run) |
+| `samples` | the 13 provided samples | the golden status and flags from the API repo's `expected/` files (first run, or `duplicate` on a re-run) |
 | `route` | one tracker, Boston to Atlanta, temperature inside 2-8 C | all accepted |
-| `excursion` | the same route drifting to 12 C | accepted (the excursion flag is designed, not built) |
+| `excursion` | the same route drifting to 12 C, every payload carrying a shipment | `TEMP_EXCURSION` on each reading above 8 C |
 | `fault` | probe sentinels 327.67 / -32768, one faulty device temperature | `SENSOR_FAULT`, `TEMPERATURE_FALLBACK` |
 | `duplicates` | every reading twice, some a third time changed | `duplicate`, `conflict` |
 | `malformed` | bad coordinates, strings, seconds timestamp, missing identity, future time, non-JSON | flagged or rejected, never lost |
 | `auth` | no key, unknown key, malformed key | 401 |
 | `load` | N requests/s for M seconds | p50/p95/p99, error rate, throughput |
 
-A scripted step that gets `429` waits out `Retry-After` and retries. A load run never retries: a 429 there is a result.
+`status` is `flagged` if and only if a response carries any flag. A scripted step that gets `429` waits out `Retry-After` and retries. A load run never retries: a 429 there is a result.
 
 ## CLI
 ```bash

@@ -5,7 +5,8 @@
     "http": 200,
     "status": "flagged",
     "flags": [
-      "IDENTITY_MISMATCH"
+      "IDENTITY_MISMATCH",
+      "TEMP_EXCURSION"
     ],
     "errors": []
   },
@@ -15,7 +16,6 @@
     "http": 200,
     "status": "conflict",
     "flags": [
-      "ACCOUNT_ID_MISSING",
       "DUPLICATE_CONFLICT",
       "INVALID_COORDINATES"
     ],
@@ -45,7 +45,6 @@
     "http": 200,
     "status": "conflict",
     "flags": [
-      "ACCOUNT_ID_MISSING",
       "DEVICE_RESOLVED_BY_NAME",
       "DUPLICATE_CONFLICT"
     ],
@@ -80,7 +79,8 @@
       "COERCED_TYPE",
       "COERCED_TYPE",
       "COERCED_TYPE",
-      "IDENTITY_MISMATCH"
+      "IDENTITY_MISMATCH",
+      "TEMP_EXCURSION"
     ],
     "errors": []
   },
@@ -90,7 +90,6 @@
     "http": 200,
     "status": "conflict",
     "flags": [
-      "ACCOUNT_ID_MISSING",
       "DUPLICATE_CONFLICT",
       "INVALID_COORDINATES"
     ],
@@ -100,10 +99,8 @@
     "index": 9,
     "name": "Clinical Supply Shipment",
     "http": 200,
-    "status": "flagged",
-    "flags": [
-      "UNKNOWN_ACCOUNT"
-    ],
+    "status": "accepted",
+    "flags": [],
     "errors": []
   },
   {
@@ -111,19 +108,15 @@
     "name": "Minimal Data Payload",
     "http": 200,
     "status": "accepted",
-    "flags": [
-      "ACCOUNT_ID_MISSING"
-    ],
+    "flags": [],
     "errors": []
   },
   {
     "index": 11,
     "name": "Vaccine Shipment Southbound",
     "http": 200,
-    "status": "flagged",
-    "flags": [
-      "TIMESTAMP_MISMATCH"
-    ],
+    "status": "accepted",
+    "flags": [],
     "errors": []
   },
   {
@@ -132,7 +125,6 @@
     "http": 422,
     "status": "rejected",
     "flags": [
-      "ACCOUNT_ID_MISSING",
       "IDENTITY_MISMATCH"
     ],
     "errors": [

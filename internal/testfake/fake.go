@@ -27,7 +27,7 @@ type Server struct {
 func New(t *testing.T) *Server {
 	s := &Server{}
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/v1/webhook/tive", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/webhook/tive", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		s.seen = append(s.seen, r.Header.Get("X-API-Key"))
 		s.count++

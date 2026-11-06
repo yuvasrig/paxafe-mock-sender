@@ -51,7 +51,7 @@ func TestSamples(t *testing.T) {
 			t.Errorf("step %d: %+v", i, s.Expect)
 		}
 	}
-	if e := steps[0].Expect; e.HTTP[0] != 200 || e.Status[0] != "flagged" || strings.Join(e.Flags, ",") != "IDENTITY_MISMATCH" {
+	if e := steps[0].Expect; e.HTTP[0] != 200 || e.Status[0] != "flagged" || strings.Join(e.Flags, ",") != "IDENTITY_MISMATCH,TEMP_EXCURSION" {
 		t.Errorf("sample 0 expectation = %+v", e)
 	}
 	if e := steps[2].Expect; len(e.Status) != 2 || e.Status[1] != "duplicate" {
@@ -60,11 +60,17 @@ func TestSamples(t *testing.T) {
 	if e := steps[1].Expect; len(e.Status) != 1 || e.Status[0] != "conflict" {
 		t.Errorf("conflict samples repeat on a re-run: %+v", e)
 	}
-	if e := steps[12].Expect; e.HTTP[0] != 422 || !e.Rejection || strings.Join(e.Flags, ",") != "ACCOUNT_ID_MISSING,IDENTITY_MISMATCH" {
+	if e := steps[12].Expect; e.HTTP[0] != 422 || !e.Rejection || strings.Join(e.Flags, ",") != "IDENTITY_MISMATCH" {
 		t.Errorf("sample 12 expectation = %+v", e)
 	}
-	if e := steps[9].Expect; strings.Join(e.Flags, ",") != "UNKNOWN_ACCOUNT" {
-		t.Errorf("sample 9 expectation = %+v", e)
+	if e := steps[9].Expect; len(e.Flags) != 0 || e.Status[0] != "accepted" {
+		t.Errorf("sample 9 (AccountId 999) is a normal accepted sample: %+v", e)
+	}
+	if e := steps[11].Expect; len(e.Flags) != 0 || e.Status[0] != "accepted" {
+		t.Errorf("sample 11 (EntryTimeUtc 5 h off) is accepted with no flags: %+v", e)
+	}
+	if e := steps[0].Expect; strings.Join(e.Flags, ",") != "IDENTITY_MISMATCH,TEMP_EXCURSION" {
+		t.Errorf("sample 0 expectation = %+v", e)
 	}
 }
 
@@ -185,21 +191,26 @@ func TestAccountOmittedWhenZero(t *testing.T) {
 
 func TestExcursionReaches12(t *testing.T) {
 	steps := build(t, "excursion")
-	max := 0.0
-	notes := 0
+	max, excursions := 0.0, 0
 	for _, st := range steps {
-		if v := decode(t, st.Body)["Temperature"].(map[string]any)["Celsius"].(float64); v > max {
+		v := decode(t, st.Body)["Temperature"].(map[string]any)["Celsius"].(float64)
+		if v > max {
 			max = v
 		}
-		if st.Expect.Note != "" {
-			notes++
+		if (v > 8) != (len(st.Expect.Flags) == 1 && st.Expect.Flags[0] == "TEMP_EXCURSION") {
+			t.Fatalf("%.2f C: expectation %+v", v, st.Expect)
 		}
-		if st.Expect.Status[0] != "accepted" {
-			t.Fatal("no TEMP_EXCURSION flag is built, so accepted is expected")
+		if v > 8 {
+			excursions++
+			if st.Expect.Status[0] != "flagged" {
+				t.Fatalf("an excursion is flagged: %+v", st.Expect)
+			}
+		} else if st.Expect.Status[0] != "accepted" {
+			t.Fatalf("in band is accepted: %+v", st.Expect)
 		}
 	}
-	if max < 11.9 || notes == 0 {
-		t.Fatalf("max %.2f, notes %d", max, notes)
+	if max < 11.9 || excursions == 0 {
+		t.Fatalf("max %.2f, excursions %d", max, excursions)
 	}
 }
 
@@ -299,19 +310,3 @@ func TestLoadPayloadsAreUnique(t *testing.T) {
 }
 
 func formatNum(v any) string { b, _ := json.Marshal(v); return string(b) }
-
-// The seconds step must be the same instant as EntryTimeUtc, otherwise the API also (correctly) flags TIMESTAMP_MISMATCH.
-func TestMalformedSecondsMatchesUTC(t *testing.T) {
-	for _, st := range build(t, "malformed") {
-		if st.Name != "timestamp in seconds" {
-			continue
-		}
-		m := decode(t, st.Body)
-		utc, err := time.Parse(time.RFC3339, m["EntryTimeUtc"].(string))
-		if err != nil || int64(m["EntryTimeEpoch"].(float64)) != utc.Unix() {
-			t.Fatalf("epoch %v vs utc %v", m["EntryTimeEpoch"], m["EntryTimeUtc"])
-		}
-		return
-	}
-	t.Fatal("step not found")
-}

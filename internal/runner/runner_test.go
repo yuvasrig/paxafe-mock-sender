@@ -36,7 +36,7 @@ func newFake(t *testing.T) *fake {
 	f := &fake{t: t, events: map[string]string{}}
 	f.answer = func(int, []byte) (int, string, []string) { return 200, "accepted", nil }
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/v1/webhook/tive", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/webhook/tive", func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.headers = append(f.headers, r.Header.Clone())
 		f.mu.Unlock()
@@ -166,7 +166,7 @@ func TestWrongAnswersFail(t *testing.T) {
 
 func TestExactFlagsAndRerunTolerance(t *testing.T) {
 	steps, _ := scenario.Samples()
-	e := steps[0].Expect // flagged / IDENTITY_MISMATCH exactly; duplicate allowed on a re-run
+	e := steps[0].Expect // flagged with exactly IDENTITY_MISMATCH and TEMP_EXCURSION; duplicate allowed on a re-run
 	mk := func(status string, flags ...string) (bool, string) {
 		a := api.Ack{Status: status, EventID: "e"}
 		for _, c := range flags {
@@ -176,19 +176,19 @@ func TestExactFlagsAndRerunTolerance(t *testing.T) {
 		}
 		return evaluate(e, api.Response{HTTP: 200}, a, true)
 	}
-	if ok, why := mk("flagged", "IDENTITY_MISMATCH"); !ok {
+	if ok, why := mk("flagged", "IDENTITY_MISMATCH", "TEMP_EXCURSION"); !ok {
 		t.Fatal(why)
 	}
-	if ok, why := mk("duplicate", "IDENTITY_MISMATCH"); !ok {
+	if ok, why := mk("duplicate", "IDENTITY_MISMATCH", "TEMP_EXCURSION"); !ok {
 		t.Fatal("a re-run duplicate must pass: " + why)
 	}
-	if ok, _ := mk("flagged", "IDENTITY_MISMATCH", "EXTRA"); ok {
+	if ok, _ := mk("flagged", "IDENTITY_MISMATCH", "TEMP_EXCURSION", "EXTRA"); ok {
 		t.Fatal("an extra flag must fail an exact expectation")
 	}
-	if ok, _ := mk("flagged"); ok {
+	if ok, _ := mk("flagged", "IDENTITY_MISMATCH"); ok {
 		t.Fatal("a missing flag must fail")
 	}
-	if ok, _ := mk("accepted", "IDENTITY_MISMATCH"); ok {
+	if ok, _ := mk("accepted", "IDENTITY_MISMATCH", "TEMP_EXCURSION"); ok {
 		t.Fatal("wrong status must fail")
 	}
 }
@@ -344,7 +344,7 @@ func TestRunNeedsClient(t *testing.T) {
 func TestScriptedStepsRetryOn429(t *testing.T) {
 	var posts atomic.Int32
 	mux := http.NewServeMux()
-	mux.HandleFunc("POST /api/v1/webhook/tive", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /api/webhook/tive", func(w http.ResponseWriter, r *http.Request) {
 		n := posts.Add(1)
 		if n == 2 { // the second request is rate limited once
 			w.Header().Set("Retry-After", "1")
@@ -388,7 +388,7 @@ func TestScriptedStepsRetryOn429(t *testing.T) {
 func TestLookupErrorsFailTheRun(t *testing.T) {
 	mux := http.NewServeMux()
 	var n atomic.Int32
-	mux.HandleFunc("POST /api/v1/webhook/tive", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("POST /api/webhook/tive", func(w http.ResponseWriter, _ *http.Request) {
 		fmt.Fprintf(w, `{"event_id":"evt_%d","status":"accepted","flags":[],"errors":[]}`, n.Add(1))
 	})
 	mux.HandleFunc("GET /api/v1/events/{id}", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(500) })
@@ -409,7 +409,7 @@ func TestLookupErrorsFailTheRun(t *testing.T) {
 func TestRefusedIsNotMissing(t *testing.T) {
 	mux := http.NewServeMux()
 	var n atomic.Int32
-	mux.HandleFunc("POST /api/v1/webhook/tive", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("POST /api/webhook/tive", func(w http.ResponseWriter, _ *http.Request) {
 		if k := n.Add(1); k%2 == 0 {
 			w.Header().Set("Retry-After", "1")
 			w.WriteHeader(429)

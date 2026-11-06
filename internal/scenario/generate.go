@@ -87,6 +87,12 @@ func payload(p Params, d device, pt point, tempC float64) map[string]any {
 		"Battery":       map[string]any{"Percentage": maxInt(5, 95-pt.i), "Estimation": "Weeks", "IsCharging": false},
 		"DeviceId":      d.imei,
 		"DeviceName":    d.name,
+		"ShipmentId":    "SIM-" + d.name,
+		"Shipment": map[string]any{
+			"Id": "SIM-" + d.name, "DeviceId": d.imei, "Carrier": "SIM-CARRIER",
+			"ShipFrom": map[string]any{"Latitude": waypoints[0].lat, "Longitude": waypoints[0].lon, "FormattedAddress": "Boston, MA 02101, USA"},
+			"ShipTo":   map[string]any{"Latitude": waypoints[len(waypoints)-1].lat, "Longitude": waypoints[len(waypoints)-1].lon, "FormattedAddress": "Atlanta, GA 30303, USA"},
+		},
 		"Location": map[string]any{
 			"Latitude": round(pt.lat, 6), "Longitude": round(pt.lon, 6),
 			"FormattedAddress":         fmt.Sprintf("%s, %s %s, USA", wp.name, wp.state, wp.zip),
@@ -159,7 +165,7 @@ func init() {
 
 	register(Scenario{
 		ID: "excursion", Title: "Temperature excursion",
-		Description: "The same route, but the temperature climbs to 12 C. The excursion check is designed but not built, so the API still answers accepted with no TEMP_EXCURSION flag.",
+		Description: "The same route, but the temperature climbs to 12 C. Every payload carries a shipment, so each reading above 8 C is flagged TEMP_EXCURSION (and still stored).",
 		Build: func(p Params) []Step {
 			d, n, end := newDevice(p.Seed), points(p), now(p)
 			steps := make([]Step, n)
@@ -171,7 +177,8 @@ func init() {
 				}
 				e := okExpect
 				if t > 8 {
-					e.Note = fmt.Sprintf("%.1f C is outside 2-8 C; TEMP_EXCURSION is not built, so no flag is expected", t)
+					e = Expect{HTTP: []int{200}, Status: []string{"flagged"}, Flags: []string{"TEMP_EXCURSION"}, ExactFlags: true, Ack: true,
+						Note: fmt.Sprintf("%.1f C is outside 2-8 C and the payload carries a shipment", t)}
 				}
 				steps[i] = Step{Name: fmt.Sprintf("%s %.1f C", waypoints[pt.place].name, t), Body: marshal(payload(p, d, pt, t)), Expect: e}
 			}
@@ -297,10 +304,10 @@ func malformedSteps(p Params) []Step {
 	m = base(2)
 	m["Temperature"] = map[string]any{"Celsius": "5.25", "Fahrenheit": "41.45"}
 	m["Cellular"] = map[string]any{"SignalStrength": "Good", "Dbm": "-80"}
-	add("numbers as strings", marshal(m), Expect{HTTP: []int{200}, Status: []string{"accepted"}, Flags: []string{"COERCED_TYPE"}, Ack: true, Note: "parsed and flagged (info)"})
+	add("numbers as strings", marshal(m), Expect{HTTP: []int{200}, Status: []string{"flagged"}, Flags: []string{"COERCED_TYPE"}, Ack: true, Note: "parsed, kept and flagged (any flag means flagged)"})
 
 	m = base(3)
-	m["EntryTimeEpoch"] = routePoint(3, 12, end).ts.Unix() // same instant as EntryTimeUtc, in seconds
+	m["EntryTimeEpoch"] = routePoint(3, 12, end).ts.Unix() // seconds instead of milliseconds
 	add("timestamp in seconds", marshal(m), flagged("multiplied by 1000", "TIMESTAMP_SECONDS"))
 
 	m = base(4)

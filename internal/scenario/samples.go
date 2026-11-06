@@ -76,10 +76,14 @@ func sampleNote(e sampleExpectation) string {
 	switch e.Index {
 	case 1, 4, 8:
 		return "same device and time as #0, different content: first kept, this one stored as a conflict"
+	case 0, 7:
+		return "TEMP_EXCURSION: outside 2-8 C and the payload carries a shipment"
+	case 6:
+		return "-18.5 C but no shipment, so no TEMP_EXCURSION"
 	case 9:
-		return "AccountId 999 is unmapped: stored under common-pool"
+		return "AccountId 999 is only metadata: the tenant is the API key's"
 	case 11:
-		return "EntryTimeUtc is 5 h off the epoch"
+		return "EntryTimeUtc is 5 h off the epoch and is ignored"
 	case 12:
 		return "unknown DeviceName and no DeviceId"
 	}

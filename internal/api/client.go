@@ -77,7 +77,7 @@ func (a Ack) ErrorCodes() []string {
 
 // Post sends one payload to the webhook. key may be empty (no header).
 func (c *Client) Post(ctx context.Context, key, requestID string, body []byte) Response {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Base+"/api/v1/webhook/tive", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.Base+"/api/webhook/tive", bytes.NewReader(body))
 	if err != nil {
 		return Response{Err: err}
 	}
