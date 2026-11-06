@@ -103,3 +103,16 @@ func TestRunJSONAndLoad(t *testing.T) {
 		t.Fatalf("load text output:\n%s", text)
 	}
 }
+
+func TestRunMixesSeveralScenarios(t *testing.T) {
+	fake := testfake.New(t)
+	var out, errb bytes.Buffer
+	code := realMain([]string{"run", "--scenario", "route,fault", "--url", fake.URL, "--key", testfake.Key, "--rate", "10", "--duration", "1s"}, &out, &errb)
+	if code != 0 || !strings.Contains(out.String(), "Mixed load: Realistic route + Sensor fault") {
+		t.Fatalf("%d\n%s\n%s", code, out.String(), errb.String())
+	}
+	code = realMain([]string{"run", "--scenario", "route,nope", "--url", fake.URL, "--key", testfake.Key}, &out, &errb)
+	if code != 2 || !strings.Contains(errb.String(), "nope") {
+		t.Fatalf("%d %s", code, errb.String())
+	}
+}

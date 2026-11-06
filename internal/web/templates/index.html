@@ -71,6 +71,26 @@
     </div>
   </form>
 
+  <form hx-post="/run" hx-target="#results" hx-indicator="#spinner2" hx-disabled-elt="find button">
+    <h2>Load generator</h2>
+    <p class="muted">Tick several scenarios to generate load from all of them at once: requests are drawn evenly from the ticked scenarios at the rate you choose. The report shows throughput and latency, and still checks that every acknowledged payload can be found again.</p>
+    <div class="scenarios">
+      {{range $s := .Scenarios}}
+      <label><input type="checkbox" name="mix" value="{{$s.ID}}" {{if eq $s.ID "route"}}checked{{end}}> <b>{{$s.Title}}</b></label>
+      {{end}}
+    </div>
+    <div class="card">
+      <div class="row">
+        <label>API key
+          <input type="password" name="key" autocomplete="off" placeholder="{{if .HasServerKey}}empty = the sender's own key{{else}}required{{end}}">
+        </label>
+        <label>Requests/s <input type="number" name="rate" value="20" min="1" max="{{rate .MaxRate}}" style="width:100px"></label>
+        <label>Seconds <input type="number" name="duration" value="15" min="1" max="{{.MaxSeconds}}" style="width:90px"></label>
+        <button type="submit">Generate load</button><span id="spinner2" class="busy">running…</span>
+      </div>
+    </div>
+  </form>
+
   <div id="results"></div>
   <div id="detail"></div>
 </main>

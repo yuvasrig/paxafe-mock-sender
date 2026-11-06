@@ -28,6 +28,7 @@ const usage = `usage:
   sender serve                                   web UI (PORT, API_BASE_URL, SENDER_API_KEY, SENDER_ACCOUNT_ID)
   sender list                                    list scenarios
   sender run --scenario ID [flags]               run a scenario and print the results
+  sender run --scenario ID,ID,... [flags]        generate load from several scenarios at once (uses --rate and --duration)
       --url URL        API base URL           (default $API_BASE_URL)
       --key KEY        API key                (default $SENDER_API_KEY)
       --rate N         load: requests per second (default 10)
@@ -119,7 +120,7 @@ func serve(stdout, stderr io.Writer) int {
 func runCmd(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	id := fs.String("scenario", "", "scenario id (see `sender list`)")
+	id := fs.String("scenario", "", "scenario id, or several separated by commas for a mixed load (see `sender list`)")
 	url := fs.String("url", os.Getenv("API_BASE_URL"), "API base URL")
 	key := fs.String("key", os.Getenv("SENDER_API_KEY"), "API key")
 	rate := fs.Float64("rate", 10, "load: requests per second")
@@ -132,7 +133,18 @@ func runCmd(args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	sc, ok := scenario.Get(*id)
+	var sc scenario.Scenario
+	var ok bool
+	if strings.Contains(*id, ",") { // several scenarios: a mixed load, driven by --rate and --duration
+		var err error
+		if sc, err = scenario.Mix(strings.Split(*id, ",")); err != nil {
+			fmt.Fprintf(stderr, "--scenario: %v; run `sender list`\n", err)
+			return 2
+		}
+		ok = true
+	} else {
+		sc, ok = scenario.Get(*id)
+	}
 	switch {
 	case !ok:
 		fmt.Fprintf(stderr, "unknown or missing --scenario %q; run `sender list`\n", *id)

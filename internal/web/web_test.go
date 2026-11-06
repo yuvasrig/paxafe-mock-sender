@@ -186,3 +186,27 @@ func TestHealthz(t *testing.T) {
 		t.Fatalf("%d %s", code, body)
 	}
 }
+
+func TestLoadGeneratorMixesSelectedScenarios(t *testing.T) {
+	_, _, ts := newServer(t, testfake.Key)
+	code, body := post(t, ts, url.Values{"mix": {"route", "fault", "malformed"}, "rate": {"20"}, "duration": {"1"}})
+	if code != 200 {
+		t.Fatalf("%d %s", code, body)
+	}
+	for _, want := range []string{"Mixed load: Realistic route", "Sensor fault", "Malformed burst", "Throughput", "p95", "route: ", "fault: ", "malformed: "} {
+		if !strings.Contains(body, want) {
+			t.Errorf("mixed load report missing %q", want)
+		}
+	}
+	if code, body := post(t, ts, url.Values{"mix": {"route", "nope"}}); code != 400 || !strings.Contains(body, "nope") {
+		t.Fatalf("an unknown scenario is refused: %d %s", code, body)
+	}
+}
+
+func TestIndexOffersTheLoadGenerator(t *testing.T) {
+	_, _, ts := newServer(t, testfake.Key)
+	_, body := get(t, ts.URL+"/")
+	if !strings.Contains(body, "Load generator") || !strings.Contains(body, `type="checkbox" name="mix" value="malformed"`) {
+		t.Fatal("the page must offer a checkbox per scenario")
+	}
+}

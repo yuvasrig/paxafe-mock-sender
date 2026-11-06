@@ -28,6 +28,16 @@ go run ./cmd/sender run --scenario route --json
 ```
 Exit status is 1 if any check fails or any acknowledged payload is missing, so it can gate a deploy.
 
+## Load from several scenarios
+
+In the web UI, the **Load generator** card has a checkbox per scenario: tick any number, pick a rate and duration, and requests are drawn evenly from all ticked scenarios. From the CLI, list them with commas:
+
+```
+sender run --scenario route,fault,malformed,duplicates --rate 30 --duration 30s --url ... --key ...
+```
+
+Scripted scenarios are replayed with a new seed on each pass, so a long run sends new payloads instead of repeating one. Because requests interleave, a mixed run checks what does not depend on order: the HTTP answer, that the payload was acknowledged, and (afterwards) that every acknowledged event can be found again, plus the sent-vs-stored comparison. Per-request status and flag expectations belong to the single-scenario runs.
+
 ## Async tenants
 
 If the API key belongs to an **async** tenant, the webhook answers `202 {"status":"queued"}` and a worker processes the payload afterwards. The sender handles this itself: a 202 only proves the payload was acknowledged, so it follows each queued event (`GET /api/v1/events/{id}`) until a worker gives it a final status, then judges it against the scenario's expectations (final status, required flags). Events that never finish count as **not processed** (a `dead` event does too), and the run fails. `--wait` (default 1m) sets how long to wait per event; the report shows how many were queued.

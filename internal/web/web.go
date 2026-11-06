@@ -146,10 +146,19 @@ func (s *Server) run(w http.ResponseWriter, r *http.Request) {
 		s.message(w, http.StatusBadRequest, "Could not read the form.")
 		return
 	}
-	sc, ok := scenario.Get(r.FormValue("scenario"))
-	if !ok {
-		s.message(w, http.StatusBadRequest, "Pick a scenario.")
-		return
+	var sc scenario.Scenario
+	if mix := r.Form["mix"]; len(mix) > 0 { // the load generator: several scenarios at once
+		var err error
+		if sc, err = scenario.Mix(mix); err != nil {
+			s.message(w, http.StatusBadRequest, "Load generator: "+err.Error()+".")
+			return
+		}
+	} else {
+		var ok bool
+		if sc, ok = scenario.Get(r.FormValue("scenario")); !ok {
+			s.message(w, http.StatusBadRequest, "Pick a scenario.")
+			return
+		}
 	}
 	key := strings.TrimSpace(r.FormValue("key"))
 	if key == "" {
