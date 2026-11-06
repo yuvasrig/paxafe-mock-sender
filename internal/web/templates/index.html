@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PAXAFE Mock Sender</title>
+<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+<style>
+  :root { --bg:#fafafa; --fg:#1d1d1f; --muted:#6b6b72; --card:#fff; --line:#e3e3e8; --accent:#1f5eff; --ok:#16794c; --okbg:#e6f6ee; --bad:#b3261e; --badbg:#fdecea; --warn:#8a5a00; --warnbg:#fff4d6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141417; --fg:#ececf1; --muted:#9a9aa5; --card:#1d1d22; --line:#2e2e36; --accent:#7ba2ff; --ok:#5fd39b; --okbg:#10281d; --bad:#ff8a80; --badbg:#321716; --warn:#f0c36a; --warnbg:#33290f; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 system-ui, sans-serif; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 16px; margin: 24px 0 8px; }
+  .muted { color: var(--muted); } code, pre { font: 13px ui-monospace, Menlo, monospace; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .scenarios { display:grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap:10px; margin:8px 0 16px; }
+  .scenarios label { display:block; border:1px solid var(--line); background:var(--card); border-radius:10px; padding:10px 12px; cursor:pointer; }
+  .scenarios label:has(input:checked) { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .scenarios b { display:block; } .scenarios span { color: var(--muted); font-size: 13px; }
+  .row { display:flex; flex-wrap:wrap; gap:12px; align-items:end; }
+  .row label { display:flex; flex-direction:column; font-size:13px; color:var(--muted); gap:4px; }
+  input[type=text], input[type=password], input[type=number] { padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--fg); font:inherit; }
+  input[name=key] { min-width: 320px; }
+  button { padding:9px 18px; border:0; border-radius:8px; background:var(--accent); color:#fff; font:inherit; font-weight:600; cursor:pointer; }
+  button:disabled, .htmx-request button { opacity:.6; }
+  #status { margin: 8px 0 16px; padding: 8px 12px; border-radius:8px; background:var(--warnbg); color:var(--warn); }
+  #status.ok { background:var(--okbg); color:var(--ok); } #status.bad { background:var(--badbg); color:var(--bad); }
+  .busy { display:none; margin-left:12px; color:var(--muted); } .htmx-request .busy, .htmx-request.busy { display:inline; }
+  .banner { padding:10px 14px; border-radius:8px; margin:12px 0; font-weight:600; }
+  .banner.ok { background:var(--okbg); color:var(--ok); } .banner.bad { background:var(--badbg); color:var(--bad); }
+  .stats { display:grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px; margin:12px 0; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+  .stat b { display:block; font-size:22px; } .stat span { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  .stat.bad b { color: var(--bad); }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:10px; overflow:hidden; font-size:13px; }
+  th, td { text-align:left; padding:7px 10px; border-bottom:1px solid var(--line); vertical-align:top; } th { color:var(--muted); font-weight:600; }
+  tr.row-click { cursor:pointer; } tr.row-click:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .chip { display:inline-block; border-radius:6px; padding:0 6px; margin:1px 2px 1px 0; background:var(--warnbg); color:var(--warn); font:12px ui-monospace, Menlo, monospace; }
+  .pass { color:var(--ok); font-weight:700; } .fail { color:var(--bad); font-weight:700; }
+  .scroll { overflow-x:auto; } pre { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px; overflow:auto; max-height:360px; }
+  @media (max-width: 600px) { input[name=key] { min-width: 0; width:100%; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>PAXAFE Mock Tive Sender</h1>
+  <p class="muted">Sends Tive payloads to <code>{{.APIBase}}</code>, shows each answer, then checks that every payload the API acknowledged can be found again.</p>
+
+  <div id="status" hx-get="/wake" hx-trigger="load" hx-swap="outerHTML">Waking the API… a free-tier instance can take about a minute.</div>
+
+  <form hx-post="/run" hx-target="#results" hx-indicator="#spinner" hx-disabled-elt="find button">
+    <h2>Scenario</h2>
+    <div class="scenarios">
+      {{range $i, $s := .Scenarios}}
+      <label><input type="radio" name="scenario" value="{{$s.ID}}" {{if eq $i 0}}checked{{end}}> <b>{{$s.Title}}</b><span>{{$s.Description}}</span></label>
+      {{end}}
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <label>API key
+          <input type="password" name="key" autocomplete="off" placeholder="{{if .HasServerKey}}empty = the sender's own key{{else}}required{{end}}">
+        </label>
+        <label>Route points <input type="number" name="points" value="12" min="2" max="{{.MaxPoints}}" style="width:90px"></label>
+        <label>Load: requests/s <input type="number" name="rate" value="10" min="1" max="{{rate .MaxRate}}" style="width:100px"></label>
+        <label>Load: seconds <input type="number" name="duration" value="10" min="1" max="{{.MaxSeconds}}" style="width:90px"></label>
+        <button type="submit">Run</button><span id="spinner" class="busy">running…</span>
+      </div>
+      <p class="muted" style="margin:10px 0 0">A key you type is used for this run only and is never stored or shown again. The web load test is capped at {{rate .MaxRate}}/s and {{.MaxSeconds}} s; use the CLI for bigger runs.</p>
+    </div>
+  </form>
+
+  <div id="results"></div>
+  <div id="detail"></div>
+</main>
+</body>
+</html>

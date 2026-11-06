@@ -1,0 +1,17 @@
+# Render blueprint for the Mock Tive Sender (a separate service from the Integration API).
+services:
+  - type: web
+    name: paxafe-sender
+    runtime: docker
+    plan: free
+    region: oregon          # same region as the API
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: API_BASE_URL
+        sync: false         # set in the dashboard, e.g. https://paxafe-api.onrender.com
+      - key: SENDER_API_KEY
+        sync: false         # the sender's own key (tenant reviewer); server-side only, never sent to a browser
+      - key: SENDER_ACCOUNT_ID
+        value: "478"        # Tive AccountId in generated payloads; 478 is mapped to the reviewer tenant

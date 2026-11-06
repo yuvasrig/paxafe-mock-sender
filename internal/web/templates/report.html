@@ -1,0 +1,46 @@
+{{$r := .R}}{{$s := $r.Summary}}
+<h2>{{$r.Title}} <span class="muted" style="font-weight:400">· run {{$r.RunID}} · {{seconds $r.Elapsed}} s</span></h2>
+{{if $s.OK}}<div class="banner ok">All {{$s.Sent}} checks passed and 0 missing.</div>
+{{else}}<div class="banner bad">{{$s.Failed}} of {{$s.Sent}} checks failed{{if $s.Missing}}, {{$s.Missing}} missing{{end}}{{if $s.NotProcessed}}, {{$s.NotProcessed}} not processed{{end}}.</div>{{end}}
+
+<div class="stats">
+  <div class="stat"><b>{{$s.Sent}}</b><span>Sent</span></div>
+  <div class="stat"><b>{{$s.Acknowledged}}</b><span>Acknowledged</span></div>
+  <div class="stat"><b>{{$s.Processed}}</b><span>Processed</span></div>
+  <div class="stat"><b>{{$s.ExpectedRejections}}</b><span>Rejected (expected)</span></div>
+  <div class="stat {{if $s.Missing}}bad{{end}}"><b>{{$s.Missing}}</b><span>Missing</span></div>
+  {{if $s.Refused}}<div class="stat"><b>{{$s.Refused}}</b><span>Refused (429/503: not taken)</span></div>{{end}}
+  <div class="stat {{if $s.Failed}}bad{{end}}"><b>{{$s.Passed}}/{{$s.Sent}}</b><span>Checks passed</span></div>
+</div>
+{{range $r.Notes}}<p class="muted">{{.}}</p>{{end}}
+
+{{if .Load}}
+<div class="stats">
+  <div class="stat"><b>{{rate $s.ThroughputPerSec}}/s</b><span>Throughput</span></div>
+  <div class="stat"><b>{{ms $s.P50Ms}} ms</b><span>p50</span></div>
+  <div class="stat"><b>{{ms $s.P95Ms}} ms</b><span>p95</span></div>
+  <div class="stat"><b>{{ms $s.P99Ms}} ms</b><span>p99</span></div>
+  <div class="stat"><b>{{ms $s.MaxMs}} ms</b><span>Max</span></div>
+  <div class="stat {{if $s.ErrorRate}}bad{{end}}"><b>{{pct $s.ErrorRate}}</b><span>Error rate (5xx / network)</span></div>
+</div>
+{{end}}
+
+<div class="scroll">
+<table>
+  <thead><tr><th>#</th><th>Request</th><th>HTTP</th><th>Status</th><th>Flags</th><th>ms</th><th>Check</th></tr></thead>
+  <tbody>
+  {{range .Rows}}
+  <tr class="row-click" hx-get="/runs/{{$r.RunID}}/{{.Index}}" hx-target="#detail" hx-trigger="click">
+    <td>{{inc .Index}}</td>
+    <td>{{.Name}}{{if .Note}}<br><span class="muted">{{.Note}}</span>{{end}}</td>
+    <td>{{if .HTTP}}{{.HTTP}}{{else}}–{{end}}</td>
+    <td>{{.Status}}</td>
+    <td>{{range .Flags}}<span class="chip">{{.}}</span>{{end}}</td>
+    <td>{{ms .LatencyMs}}</td>
+    <td>{{if .Pass}}<span class="pass">✓</span>{{else}}<span class="fail">✗</span> {{.Reason}}{{end}}</td>
+  </tr>
+  {{end}}
+  </tbody>
+</table>
+</div>
+{{if .Truncated}}<p class="muted">Showing the first 200 of {{$s.Sent}} requests. Totals above cover all of them.</p>{{end}}

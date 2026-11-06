@@ -1,0 +1,142 @@
+[
+  {
+    "index": 0,
+    "name": "Standard Temperature Shipment",
+    "http": 200,
+    "status": "flagged",
+    "flags": [
+      "IDENTITY_MISMATCH"
+    ],
+    "errors": []
+  },
+  {
+    "index": 1,
+    "name": "Device A571992 Reading",
+    "http": 200,
+    "status": "conflict",
+    "flags": [
+      "ACCOUNT_ID_MISSING",
+      "DUPLICATE_CONFLICT",
+      "INVALID_COORDINATES"
+    ],
+    "errors": []
+  },
+  {
+    "index": 2,
+    "name": "GPS Location Shipment",
+    "http": 200,
+    "status": "accepted",
+    "flags": [],
+    "errors": []
+  },
+  {
+    "index": 3,
+    "name": "Vaccine Shipment Checkpoint",
+    "http": 200,
+    "status": "flagged",
+    "flags": [
+      "SENSOR_FAULT"
+    ],
+    "errors": []
+  },
+  {
+    "index": 4,
+    "name": "Device Name Only",
+    "http": 200,
+    "status": "conflict",
+    "flags": [
+      "ACCOUNT_ID_MISSING",
+      "DEVICE_RESOLVED_BY_NAME",
+      "DUPLICATE_CONFLICT"
+    ],
+    "errors": []
+  },
+  {
+    "index": 5,
+    "name": "Biologics Replenishment Shipment",
+    "http": 200,
+    "status": "flagged",
+    "flags": [
+      "TIMESTAMP_SECONDS"
+    ],
+    "errors": []
+  },
+  {
+    "index": 6,
+    "name": "Cellular Location Only",
+    "http": 200,
+    "status": "flagged",
+    "flags": [
+      "SENSOR_FAULT"
+    ],
+    "errors": []
+  },
+  {
+    "index": 7,
+    "name": "Standard Temperature Shipment Update",
+    "http": 200,
+    "status": "flagged",
+    "flags": [
+      "COERCED_TYPE",
+      "COERCED_TYPE",
+      "COERCED_TYPE",
+      "IDENTITY_MISMATCH"
+    ],
+    "errors": []
+  },
+  {
+    "index": 8,
+    "name": "Device A571992 Follow-up Reading",
+    "http": 200,
+    "status": "conflict",
+    "flags": [
+      "ACCOUNT_ID_MISSING",
+      "DUPLICATE_CONFLICT",
+      "INVALID_COORDINATES"
+    ],
+    "errors": []
+  },
+  {
+    "index": 9,
+    "name": "Clinical Supply Shipment",
+    "http": 200,
+    "status": "flagged",
+    "flags": [
+      "UNKNOWN_ACCOUNT"
+    ],
+    "errors": []
+  },
+  {
+    "index": 10,
+    "name": "Minimal Data Payload",
+    "http": 200,
+    "status": "accepted",
+    "flags": [
+      "ACCOUNT_ID_MISSING"
+    ],
+    "errors": []
+  },
+  {
+    "index": 11,
+    "name": "Vaccine Shipment Southbound",
+    "http": 200,
+    "status": "flagged",
+    "flags": [
+      "TIMESTAMP_MISMATCH"
+    ],
+    "errors": []
+  },
+  {
+    "index": 12,
+    "name": "Entity and Device Name",
+    "http": 422,
+    "status": "rejected",
+    "flags": [
+      "ACCOUNT_ID_MISSING",
+      "IDENTITY_MISMATCH"
+    ],
+    "errors": [
+      "NO_DEVICE_IDENTITY"
+    ]
+  }
+]

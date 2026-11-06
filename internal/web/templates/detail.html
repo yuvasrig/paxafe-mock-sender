@@ -1,0 +1,7 @@
+<h2>Request {{inc .Index}}: {{.Name}}</h2>
+<p class="muted">Request ID <code>{{.RequestID}}</code>{{if .EventID}} · event <code>{{.EventID}}</code>{{end}}{{if .Verified}} · stored as <b>{{if .Found}}{{.StoredStatus}}{{else}}not found{{end}}</b>{{end}}</p>
+{{if not .Pass}}<div class="banner bad">{{.Reason}}</div>{{end}}
+<div class="row" style="align-items:stretch">
+  <div style="flex:1;min-width:300px"><b>Tive request</b><pre>{{pretty .Request}}</pre></div>
+  <div style="flex:1;min-width:300px"><b>API response{{if .HTTP}} (HTTP {{.HTTP}}){{end}}</b><pre>{{if .NetworkError}}{{.NetworkError}}{{else}}{{pretty .Response}}{{end}}</pre></div>
+</div>

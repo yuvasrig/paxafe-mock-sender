@@ -1,0 +1,1 @@
+{{if .OK}}<div id="status" class="ok">API is up (answered in {{seconds .Took}} s).</div>{{else}}<div id="status" class="bad">The API did not answer: {{.Err}}</div>{{end}}
