@@ -77,9 +77,9 @@ func sampleNote(e sampleExpectation) string {
 	case 1, 4, 8:
 		return "same device and time as #0, different content: first kept, this one stored as a conflict"
 	case 0, 7:
-		return "TEMP_EXCURSION: outside 2-8 C and the payload carries a shipment"
+		return "10 C and above is stored as sent: temperatures are not judged"
 	case 6:
-		return "-18.5 C but no shipment, so no TEMP_EXCURSION"
+		return "-18.5 C is stored as sent"
 	case 9:
 		return "AccountId 999 is only metadata: the tenant is the API key's"
 	case 11:

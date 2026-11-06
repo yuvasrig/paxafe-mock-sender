@@ -166,7 +166,7 @@ func TestWrongAnswersFail(t *testing.T) {
 
 func TestExactFlagsAndRerunTolerance(t *testing.T) {
 	steps, _ := scenario.Samples()
-	e := steps[0].Expect // flagged with exactly IDENTITY_MISMATCH and TEMP_EXCURSION; duplicate allowed on a re-run
+	e := steps[0].Expect // flagged with exactly IDENTITY_MISMATCH; duplicate allowed on a re-run
 	mk := func(status string, flags ...string) (bool, string) {
 		a := api.Ack{Status: status, EventID: "e"}
 		for _, c := range flags {
@@ -176,19 +176,19 @@ func TestExactFlagsAndRerunTolerance(t *testing.T) {
 		}
 		return evaluate(e, api.Response{HTTP: 200}, a, true)
 	}
-	if ok, why := mk("flagged", "IDENTITY_MISMATCH", "TEMP_EXCURSION"); !ok {
+	if ok, why := mk("flagged", "IDENTITY_MISMATCH"); !ok {
 		t.Fatal(why)
 	}
-	if ok, why := mk("duplicate", "IDENTITY_MISMATCH", "TEMP_EXCURSION"); !ok {
+	if ok, why := mk("duplicate", "IDENTITY_MISMATCH"); !ok {
 		t.Fatal("a re-run duplicate must pass: " + why)
 	}
-	if ok, _ := mk("flagged", "IDENTITY_MISMATCH", "TEMP_EXCURSION", "EXTRA"); ok {
+	if ok, _ := mk("flagged", "IDENTITY_MISMATCH", "EXTRA"); ok {
 		t.Fatal("an extra flag must fail an exact expectation")
 	}
-	if ok, _ := mk("flagged", "IDENTITY_MISMATCH"); ok {
+	if ok, _ := mk("flagged"); ok {
 		t.Fatal("a missing flag must fail")
 	}
-	if ok, _ := mk("accepted", "IDENTITY_MISMATCH", "TEMP_EXCURSION"); ok {
+	if ok, _ := mk("accepted", "IDENTITY_MISMATCH"); ok {
 		t.Fatal("wrong status must fail")
 	}
 }

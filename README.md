@@ -9,7 +9,7 @@ that every payload the API acknowledged can be found again: *N sent · N acknowl
 |---|---|---|
 | `samples` | the 13 provided samples | the golden status and flags from the API repo's `expected/` files (first run, or `duplicate` on a re-run) |
 | `route` | one tracker, Boston to Atlanta, temperature inside 2-8 C | all accepted |
-| `excursion` | the same route drifting to 12 C, every payload carrying a shipment | `TEMP_EXCURSION` on each reading above 8 C |
+| `excursion` | the same route drifting to 12 C | accepted with no flag (the API does not judge temperatures) |
 | `fault` | probe sentinels 327.67 / -32768, one faulty device temperature | `SENSOR_FAULT`, `TEMPERATURE_FALLBACK` |
 | `duplicates` | every reading twice, some a third time changed | `duplicate`, `conflict` |
 | `malformed` | bad coordinates, strings, seconds timestamp, missing identity, future time, non-JSON | flagged or rejected, never lost |

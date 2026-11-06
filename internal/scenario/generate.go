@@ -165,7 +165,7 @@ func init() {
 
 	register(Scenario{
 		ID: "excursion", Title: "Temperature excursion",
-		Description: "The same route, but the temperature climbs to 12 C. Every payload carries a shipment, so each reading above 8 C is flagged TEMP_EXCURSION (and still stored).",
+		Description: "The same route, but the temperature climbs to 12 C. The API does not judge temperatures, so every reading is accepted with no flag.",
 		Build: func(p Params) []Step {
 			d, n, end := newDevice(p.Seed), points(p), now(p)
 			steps := make([]Step, n)
@@ -177,8 +177,7 @@ func init() {
 				}
 				e := okExpect
 				if t > 8 {
-					e = Expect{HTTP: []int{200}, Status: []string{"flagged"}, Flags: []string{"TEMP_EXCURSION"}, ExactFlags: true, Ack: true,
-						Note: fmt.Sprintf("%.1f C is outside 2-8 C and the payload carries a shipment", t)}
+					e.Note = fmt.Sprintf("%.1f C is outside 2-8 C, but temperatures are not judged: accepted, no flag", t)
 				}
 				steps[i] = Step{Name: fmt.Sprintf("%s %.1f C", waypoints[pt.place].name, t), Body: marshal(payload(p, d, pt, t)), Expect: e}
 			}

@@ -5,8 +5,7 @@
     "http": 200,
     "status": "flagged",
     "flags": [
-      "IDENTITY_MISMATCH",
-      "TEMP_EXCURSION"
+      "IDENTITY_MISMATCH"
     ],
     "errors": []
   },
@@ -79,8 +78,7 @@
       "COERCED_TYPE",
       "COERCED_TYPE",
       "COERCED_TYPE",
-      "IDENTITY_MISMATCH",
-      "TEMP_EXCURSION"
+      "IDENTITY_MISMATCH"
     ],
     "errors": []
   },

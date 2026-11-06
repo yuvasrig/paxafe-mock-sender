@@ -51,7 +51,7 @@ func TestSamples(t *testing.T) {
 			t.Errorf("step %d: %+v", i, s.Expect)
 		}
 	}
-	if e := steps[0].Expect; e.HTTP[0] != 200 || e.Status[0] != "flagged" || strings.Join(e.Flags, ",") != "IDENTITY_MISMATCH,TEMP_EXCURSION" {
+	if e := steps[0].Expect; e.HTTP[0] != 200 || e.Status[0] != "flagged" || strings.Join(e.Flags, ",") != "IDENTITY_MISMATCH" {
 		t.Errorf("sample 0 expectation = %+v", e)
 	}
 	if e := steps[2].Expect; len(e.Status) != 2 || e.Status[1] != "duplicate" {
@@ -69,7 +69,7 @@ func TestSamples(t *testing.T) {
 	if e := steps[11].Expect; len(e.Flags) != 0 || e.Status[0] != "accepted" {
 		t.Errorf("sample 11 (EntryTimeUtc 5 h off) is accepted with no flags: %+v", e)
 	}
-	if e := steps[0].Expect; strings.Join(e.Flags, ",") != "IDENTITY_MISMATCH,TEMP_EXCURSION" {
+	if e := steps[0].Expect; strings.Join(e.Flags, ",") != "IDENTITY_MISMATCH" {
 		t.Errorf("sample 0 expectation = %+v", e)
 	}
 }
@@ -191,26 +191,21 @@ func TestAccountOmittedWhenZero(t *testing.T) {
 
 func TestExcursionReaches12(t *testing.T) {
 	steps := build(t, "excursion")
-	max, excursions := 0.0, 0
+	max, above := 0.0, 0
 	for _, st := range steps {
 		v := decode(t, st.Body)["Temperature"].(map[string]any)["Celsius"].(float64)
 		if v > max {
 			max = v
 		}
-		if (v > 8) != (len(st.Expect.Flags) == 1 && st.Expect.Flags[0] == "TEMP_EXCURSION") {
-			t.Fatalf("%.2f C: expectation %+v", v, st.Expect)
-		}
 		if v > 8 {
-			excursions++
-			if st.Expect.Status[0] != "flagged" {
-				t.Fatalf("an excursion is flagged: %+v", st.Expect)
-			}
-		} else if st.Expect.Status[0] != "accepted" {
-			t.Fatalf("in band is accepted: %+v", st.Expect)
+			above++
+		}
+		if len(st.Expect.Flags) != 0 || st.Expect.Status[0] != "accepted" {
+			t.Fatalf("%.2f C: temperatures are not judged, so every reading is accepted with no flag: %+v", v, st.Expect)
 		}
 	}
-	if max < 11.9 || excursions == 0 {
-		t.Fatalf("max %.2f, excursions %d", max, excursions)
+	if max < 11.9 || above == 0 {
+		t.Fatalf("max %.2f, readings above 8 C: %d", max, above)
 	}
 }
 
