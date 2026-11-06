@@ -21,6 +21,19 @@ type Server struct {
 	mu    sync.Mutex
 	seen  []string // API keys received by the webhook
 	count int
+
+	// asyncPolls > 0 makes the fake behave like an async tenant: the webhook answers 202 queued, and each event
+	// reads back as "pending" that many times before it becomes "accepted".
+	asyncPolls int
+	polls      map[string]int
+}
+
+// Async turns the fake into an async tenant whose events need n lookups before a worker has "processed" them.
+func (s *Server) Async(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.asyncPolls = n
+	s.polls = map[string]int{}
 }
 
 // New starts a fake API and stops it when the test ends.
@@ -45,6 +58,14 @@ func New(t *testing.T) *Server {
 			fmt.Fprintf(w, `{"event_id":"evt_%d","status":"rejected","flags":[],"errors":[{"code":"INVALID_JSON"}]}`, n)
 			return
 		}
+		s.mu.Lock()
+		async := s.asyncPolls > 0
+		s.mu.Unlock()
+		if async {
+			w.WriteHeader(202)
+			fmt.Fprintf(w, `{"event_id":"evt_%d","status":"queued","flags":[],"errors":[]}`, n)
+			return
+		}
 		fmt.Fprintf(w, `{"event_id":"evt_%d","status":"accepted","flags":[],"errors":[]}`, n)
 	})
 	mux.HandleFunc("GET /api/v1/events/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -52,7 +73,17 @@ func New(t *testing.T) *Server {
 			w.WriteHeader(401)
 			return
 		}
-		fmt.Fprint(w, `{"status":"accepted"}`)
+		s.mu.Lock()
+		pending := s.asyncPolls > 0 && s.polls[r.PathValue("id")] < s.asyncPolls
+		if s.asyncPolls > 0 {
+			s.polls[r.PathValue("id")]++
+		}
+		s.mu.Unlock()
+		if pending {
+			fmt.Fprint(w, `{"status":"pending","flags":[]}`)
+			return
+		}
+		fmt.Fprint(w, `{"status":"accepted","flags":[]}`)
 	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { fmt.Fprint(w, `{"status":"ok"}`) })
 	s.Server = httptest.NewServer(mux)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -149,5 +150,24 @@ func TestEventStatusWaitsOut429(t *testing.T) {
 	s, found, err := New(srv.URL).EventStatus(context.Background(), "k", "e")
 	if err != nil || !found || s != "accepted" || calls.Load() != 2 {
 		t.Fatalf("%q %v %v calls=%d", s, found, err, calls.Load())
+	}
+}
+
+func TestEventReturnsStatusAndFlags(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "evt_1") {
+			w.WriteHeader(404)
+			return
+		}
+		fmt.Fprint(w, `{"status":"flagged","flags":[{"code":"A"},{"code":"B"}]}`)
+	}))
+	defer srv.Close()
+	c := New(srv.URL)
+	info, found, err := c.Event(context.Background(), "k", "evt_1")
+	if err != nil || !found || info.Status != "flagged" || len(info.Flags) != 2 || info.Flags[1] != "B" {
+		t.Fatalf("%+v %v %v", info, found, err)
+	}
+	if _, found, _ := c.Event(context.Background(), "k", "nope"); found {
+		t.Fatal("404 is not found")
 	}
 }

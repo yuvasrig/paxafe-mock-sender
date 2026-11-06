@@ -430,3 +430,76 @@ func TestRefusedIsNotMissing(t *testing.T) {
 		t.Fatalf("%+v", s)
 	}
 }
+
+// An async tenant answers 202 "queued": the sender must follow each event until a worker has finished it, and only
+// then judge it.
+func asyncFake(t *testing.T, final string, pollsBeforeFinal int) *fake {
+	f := newFake(t)
+	f.answer = func(int, []byte) (int, string, []string) { return 202, "queued", nil }
+	var mu sync.Mutex
+	polls := map[string]int{}
+	f.eventStatus = func(id, _ string) string {
+		mu.Lock()
+		defer mu.Unlock()
+		polls[id]++
+		if polls[id] <= pollsBeforeFinal {
+			return "pending"
+		}
+		return final
+	}
+	return f
+}
+
+func TestQueuedEventsAreFollowedToTheirFinalStatus(t *testing.T) {
+	f := asyncFake(t, "accepted", 2)
+	cfg := f.cfg()
+	cfg.Params.Points = 6
+	rep, _ := Run(context.Background(), cfg, mustGet(t, "route"))
+	s := rep.Summary
+	if s.Sent != 6 || s.Queued != 6 || s.Acknowledged != 6 || s.Processed != 6 || s.Failed != 0 || s.Missing != 0 || !s.OK() {
+		t.Fatalf("summary %+v", s)
+	}
+	if r := rep.Results[0]; !r.Queued || r.Status != "accepted" || r.StoredStatus != "accepted" || !r.Verified {
+		t.Fatalf("result %+v", r)
+	}
+}
+
+func TestQueuedEventWithTheWrongFinalStatusFails(t *testing.T) {
+	f := asyncFake(t, "rejected", 1)
+	cfg := f.cfg()
+	cfg.Params.Points = 3
+	rep, _ := Run(context.Background(), cfg, mustGet(t, "route"))
+	s := rep.Summary
+	if s.Failed != 3 || s.Processed != 3 || s.OK() {
+		t.Fatalf("summary %+v", s)
+	}
+	if !strings.Contains(rep.Results[0].Reason, `final status "rejected"`) {
+		t.Fatalf("reason %q", rep.Results[0].Reason)
+	}
+}
+
+func TestQueuedEventsThatNeverFinishAreNotProcessed(t *testing.T) {
+	for _, stuck := range []string{"pending", "dead"} {
+		f := asyncFake(t, stuck, 1_000_000)
+		f.eventStatus = func(string, string) string { return stuck }
+		cfg := f.cfg()
+		cfg.Params.Points = 2
+		cfg.AsyncWait = 300 * time.Millisecond
+		rep, _ := Run(context.Background(), cfg, mustGet(t, "route"))
+		s := rep.Summary
+		if s.NotProcessed != 2 || s.Processed != 0 || s.OK() {
+			t.Fatalf("%s: summary %+v", stuck, s)
+		}
+	}
+}
+
+func TestQueuedEventLostAfterAckIsMissing(t *testing.T) {
+	f := asyncFake(t, "accepted", 0)
+	f.eventStatus = func(string, string) string { return "" } // 404
+	cfg := f.cfg()
+	cfg.Params.Points = 2
+	rep, _ := Run(context.Background(), cfg, mustGet(t, "route"))
+	if rep.Summary.Missing != 2 || rep.Summary.OK() {
+		t.Fatalf("summary %+v", rep.Summary)
+	}
+}

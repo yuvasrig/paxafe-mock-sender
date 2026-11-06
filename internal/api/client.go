@@ -127,25 +127,37 @@ func (c *Client) PostRetry(ctx context.Context, key, requestID string, body []by
 	}
 }
 
+// EventInfo is what the sender reads back about a stored event.
+type EventInfo struct {
+	Status string
+	Flags  []string
+}
+
 // EventStatus returns the stored status of an event ("pending" if it has no outcome yet).
 // found is false for 404 (never saved, or not visible to this key).
 func (c *Client) EventStatus(ctx context.Context, key, eventID string) (status string, found bool, err error) {
+	info, found, err := c.Event(ctx, key, eventID)
+	return info.Status, found, err
+}
+
+// Event returns the stored event's status and flag codes.
+func (c *Client) Event(ctx context.Context, key, eventID string) (info EventInfo, found bool, err error) {
 	for try := 0; ; try++ {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.Base+"/api/v1/events/"+eventID, nil)
 		if err != nil {
-			return "", false, err
+			return EventInfo{}, false, err
 		}
 		req.Header.Set("X-API-Key", key)
 		resp, err := c.HTTP.Do(req)
 		if err != nil {
-			return "", false, err
+			return EventInfo{}, false, err
 		}
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 		resp.Body.Close()
 		if resp.StatusCode == http.StatusTooManyRequests && try < 10 { // the API is rate limiting our own checks
 			select {
 			case <-ctx.Done():
-				return "", false, ctx.Err()
+				return EventInfo{}, false, ctx.Err()
 			case <-time.After(retryAfter(resp)):
 			}
 			continue
@@ -154,20 +166,27 @@ func (c *Client) EventStatus(ctx context.Context, key, eventID string) (status s
 	}
 }
 
-func decodeEvent(code int, b []byte) (status string, found bool, err error) {
+func decodeEvent(code int, b []byte) (info EventInfo, found bool, err error) {
 	switch code {
 	case http.StatusOK:
 		var ev struct {
 			Status string `json:"status"`
+			Flags  []struct {
+				Code string `json:"code"`
+			} `json:"flags"`
 		}
 		if err := json.Unmarshal(b, &ev); err != nil {
-			return "", false, fmt.Errorf("decode event: %w", err)
+			return EventInfo{}, false, fmt.Errorf("decode event: %w", err)
 		}
-		return ev.Status, true, nil
+		info.Status = ev.Status
+		for _, f := range ev.Flags {
+			info.Flags = append(info.Flags, f.Code)
+		}
+		return info, true, nil
 	case http.StatusNotFound:
-		return "", false, nil
+		return EventInfo{}, false, nil
 	}
-	return "", false, fmt.Errorf("GET event: HTTP %d", code)
+	return EventInfo{}, false, fmt.Errorf("GET event: HTTP %d", code)
 }
 
 // Wake polls /healthz until it answers 200 or ctx ends. Free-tier services sleep when idle.

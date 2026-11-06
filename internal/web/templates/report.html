@@ -9,6 +9,7 @@
   <div class="stat"><b>{{$s.Processed}}</b><span>Processed</span></div>
   <div class="stat"><b>{{$s.ExpectedRejections}}</b><span>Rejected (expected)</span></div>
   <div class="stat {{if $s.Missing}}bad{{end}}"><b>{{$s.Missing}}</b><span>Missing</span></div>
+  {{if $s.Queued}}<div class="stat"><b>{{$s.Queued}}</b><span>Queued (async), followed to the end</span></div>{{end}}
   {{if $s.Refused}}<div class="stat"><b>{{$s.Refused}}</b><span>Refused (429/503: not taken)</span></div>{{end}}
   <div class="stat {{if $s.Failed}}bad{{end}}"><b>{{$s.Passed}}/{{$s.Sent}}</b><span>Checks passed</span></div>
 </div>

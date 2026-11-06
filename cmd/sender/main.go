@@ -127,6 +127,7 @@ func runCmd(args []string, stdout, stderr io.Writer) int {
 	points := fs.Int("points", 12, "route length")
 	account := fs.Int64("account", accountFromEnv(), "Tive AccountId in payloads (0 = omit)")
 	verify := fs.Int("verify", 300, "most events to look up afterwards")
+	wait := fs.Duration("wait", time.Minute, "async tenants: how long to wait for workers to finish each queued event")
 	asJSON := fs.Bool("json", false, "print the full report as JSON")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -158,7 +159,7 @@ func runCmd(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stderr, "up in %.1fs\n", took.Seconds())
 
 	rep, err := runner.Run(ctx, runner.Config{
-		Client: client, Key: *key, RunID: "cli-" + strconv.FormatInt(time.Now().UnixMilli(), 36), VerifyCap: *verify,
+		Client: client, Key: *key, RunID: "cli-" + strconv.FormatInt(time.Now().UnixMilli(), 36), VerifyCap: *verify, AsyncWait: *wait,
 		Params: scenario.Params{Account: *account, Points: *points, Rate: *rate, Duration: *dur, Now: time.Now().UTC().Truncate(time.Second), Seed: time.Now().UnixNano()},
 	}, sc)
 	if err != nil {
@@ -202,6 +203,9 @@ func printReport(w io.Writer, rep *runner.Report, load bool) {
 
 	s := rep.Summary
 	fmt.Fprintf(w, "\n%d sent · %d acknowledged · %d processed · %d rejected (expected) · %d missing", s.Sent, s.Acknowledged, s.Processed, s.ExpectedRejections, s.Missing)
+	if s.Queued > 0 {
+		fmt.Fprintf(w, " · %d queued (async tenant: followed until a worker finished each)", s.Queued)
+	}
 	if s.Refused > 0 {
 		fmt.Fprintf(w, " · %d refused (429/503/401/413: not taken, not lost)", s.Refused)
 	}

@@ -28,6 +28,10 @@ go run ./cmd/sender run --scenario route --json
 ```
 Exit status is 1 if any check fails or any acknowledged payload is missing, so it can gate a deploy.
 
+## Async tenants
+
+If the API key belongs to an **async** tenant, the webhook answers `202 {"status":"queued"}` and a worker processes the payload afterwards. The sender handles this itself: a 202 only proves the payload was acknowledged, so it follows each queued event (`GET /api/v1/events/{id}`) until a worker gives it a final status, then judges it against the scenario's expectations (final status, required flags). Events that never finish count as **not processed** (a `dead` event does too), and the run fails. `--wait` (default 1m) sets how long to wait per event; the report shows how many were queued.
+
 ## Web UI
 ```bash
 make run API=http://localhost:8080 KEY=pxk_test_...    # then open http://localhost:8080

@@ -5,6 +5,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -33,8 +34,9 @@ type Config struct {
 	Key         string
 	RunID       string
 	Params      scenario.Params
-	VerifyCap   int // most events to look up afterwards (default 300); a load run samples evenly
-	Concurrency int // load workers (default 32)
+	VerifyCap   int           // most events to look up afterwards (default 300); a load run samples evenly
+	AsyncWait   time.Duration // how long to wait for workers to finish a queued event (default 60s)
+	Concurrency int           // load workers (default 32)
 }
 
 // Result is one request and what came back.
@@ -53,22 +55,25 @@ type Result struct {
 	Note         string   `json:"note,omitempty"`
 	NetworkError string   `json:"network_error,omitempty"`
 	Retries      int      `json:"retries,omitempty"`
+	Queued       bool     `json:"queued,omitempty"` // the API answered 202: an async tenant, processed by a worker later
 
 	Verified     bool   `json:"verified"`
 	LookupError  string `json:"lookup_error,omitempty"`
 	StoredStatus string `json:"stored_status,omitempty"`
 	Found        bool   `json:"found"`
 
-	ExpectAck       bool   `json:"expect_ack"`
-	ExpectRejection bool   `json:"expect_rejection"`
-	Request         string `json:"request,omitempty"`
-	Response        string `json:"response,omitempty"`
+	Expect          scenario.Expect `json:"-"`
+	ExpectAck       bool            `json:"expect_ack"`
+	ExpectRejection bool            `json:"expect_rejection"`
+	Request         string          `json:"request,omitempty"`
+	Response        string          `json:"response,omitempty"`
 }
 
 // Summary is the completeness and performance picture of a run.
 type Summary struct {
 	Sent               int     `json:"sent"`
 	Acknowledged       int     `json:"acknowledged"`
+	Queued             int     `json:"queued"` // acknowledged with 202 and judged after the workers finished them
 	Processed          int     `json:"processed"`
 	ExpectedRejections int     `json:"expected_rejections"`
 	Missing            int     `json:"missing"`
@@ -178,7 +183,7 @@ func execute(ctx context.Context, cfg Config, i int, st scenario.Step, keepDetai
 
 	r := Result{
 		Index: i, Name: st.Name, RequestID: reqID, HTTP: resp.HTTP, LatencyMs: float64(resp.Latency.Microseconds()) / 1000,
-		Note: st.Expect.Note, ExpectAck: st.Expect.Ack, ExpectRejection: st.Expect.Rejection,
+		Note: st.Expect.Note, Expect: st.Expect, ExpectAck: st.Expect.Ack, ExpectRejection: st.Expect.Rejection,
 		Flags: []string{}, Errors: []string{},
 	}
 	if resp.Err != nil {
@@ -196,6 +201,7 @@ func execute(ctx context.Context, cfg Config, i int, st scenario.Step, keepDetai
 		r.Status, r.EventID = ack.Status, ack.EventID
 		r.Flags, r.Errors = ack.FlagCodes(), ack.ErrorCodes()
 	}
+	r.Queued = resp.HTTP == http.StatusAccepted && ack.Status == "queued"
 	r.Pass, r.Reason = evaluate(st.Expect, resp, ack, parsed)
 	if keepDetail || !r.Pass {
 		r.Request, r.Response = clip(st.Body), clip(resp.Body)
@@ -213,6 +219,14 @@ func clip(b []byte) string {
 func evaluate(e scenario.Expect, resp api.Response, ack api.Ack, parsed bool) (bool, string) {
 	if resp.Err != nil {
 		return false, "network error: " + resp.Err.Error()
+	}
+	if resp.HTTP == http.StatusAccepted && ack.Status == "queued" {
+		// An async tenant: the payload is saved and queued, and the real result is not known yet. All that can be
+		// checked now is that it was acknowledged; verify() waits for the workers and judges the outcome.
+		if !parsed || ack.EventID == "" {
+			return false, "202 without an event_id: the payload was not acknowledged"
+		}
+		return true, ""
 	}
 	var why []string
 	wantHTTP := e.HTTP
@@ -339,6 +353,10 @@ func verify(ctx context.Context, cfg Config, results []Result) int {
 		go func(i int) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			if results[i].Queued {
+				awaitWorkers(ctx, cfg, &results[i])
+				return
+			}
 			status, found, err := cfg.Client.EventStatus(ctx, cfg.Key, results[i].EventID)
 			if err != nil {
 				results[i].LookupError = err.Error()
@@ -349,6 +367,59 @@ func verify(ctx context.Context, cfg Config, results []Result) int {
 	}
 	wg.Wait()
 	return len(idx)
+}
+
+const defaultAsyncWait = 60 * time.Second
+
+// awaitWorkers follows a queued event until a worker has given it a final status (or the wait runs out), then
+// judges it by the scenario's expectations, which could not be checked at acknowledgement time.
+func awaitWorkers(ctx context.Context, cfg Config, r *Result) {
+	wait := cfg.AsyncWait
+	if wait <= 0 {
+		wait = defaultAsyncWait
+	}
+	deadline := time.Now().Add(wait)
+	pause := 100 * time.Millisecond
+	var info api.EventInfo
+	var found bool
+	for {
+		var err error
+		info, found, err = cfg.Client.Event(ctx, cfg.Key, r.EventID)
+		if err != nil {
+			r.LookupError = err.Error()
+			return
+		}
+		if !found || terminal[info.Status] || time.Now().After(deadline) || ctx.Err() != nil {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(pause):
+		}
+		if pause < time.Second {
+			pause *= 2
+		}
+	}
+	r.Verified, r.Found, r.StoredStatus = true, found, info.Status
+	if !found || !terminal[info.Status] {
+		return // the summary reports it as missing or not processed
+	}
+	r.Status, r.Flags = info.Status, info.Flags
+	var why []string
+	if len(r.Expect.Status) > 0 && !containsStr(r.Expect.Status, info.Status) {
+		why = append(why, fmt.Sprintf("final status %q, want %v", info.Status, r.Expect.Status))
+	}
+	for _, want := range r.Expect.Flags {
+		if !containsStr(info.Flags, want) {
+			why = append(why, fmt.Sprintf("missing flag %s (got %v)", want, info.Flags))
+		}
+	}
+	if r.Expect.Rejection && info.Status != "rejected" {
+		why = append(why, fmt.Sprintf("expected a rejection, final status %q", info.Status))
+	}
+	if len(why) > 0 {
+		r.Pass, r.Reason = false, strings.Join(why, "; ")
+	}
 }
 
 func summarize(results []Result, elapsed time.Duration) Summary {
@@ -363,6 +434,9 @@ func summarize(results []Result, elapsed time.Duration) Summary {
 		}
 		if r.EventID != "" {
 			s.Acknowledged++
+		}
+		if r.Queued {
+			s.Queued++
 		}
 		if r.Pass && r.ExpectRejection {
 			s.ExpectedRejections++
