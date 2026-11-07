@@ -368,6 +368,11 @@ func verify(ctx context.Context, cfg Config, results []Result) int {
 		idx = sampled
 	}
 
+	wait := cfg.AsyncWait
+	if wait <= 0 {
+		wait = defaultAsyncWait
+	}
+	deadline := time.Now().Add(wait) // one budget for waiting on workers, shared by all the events
 	sem := make(chan struct{}, 8)
 	var wg sync.WaitGroup
 	for _, i := range idx {
@@ -377,7 +382,7 @@ func verify(ctx context.Context, cfg Config, results []Result) int {
 			defer wg.Done()
 			defer func() { <-sem }()
 			if results[i].Queued {
-				awaitWorkers(ctx, cfg, &results[i])
+				awaitWorkers(ctx, cfg, &results[i], deadline)
 				return
 			}
 			info, found, err := cfg.Client.Event(ctx, keyOf(cfg, results[i]), results[i].EventID)
@@ -399,12 +404,11 @@ const defaultAsyncWait = 60 * time.Second
 
 // awaitWorkers follows a queued event until a worker has given it a final status (or the wait runs out), then
 // judges it by the scenario's expectations, which could not be checked at acknowledgement time.
-func awaitWorkers(ctx context.Context, cfg Config, r *Result) {
-	wait := cfg.AsyncWait
-	if wait <= 0 {
-		wait = defaultAsyncWait
-	}
-	deadline := time.Now().Add(wait)
+//
+// deadline is shared by every event of the run: how long to wait is a budget for the whole check, not for each event.
+// (Waiting per event, a few at a time, would take hours when the workers are down.) An event reached after the
+// deadline is looked up once and judged by what that shows.
+func awaitWorkers(ctx context.Context, cfg Config, r *Result, deadline time.Time) {
 	pause := 100 * time.Millisecond
 	var info api.EventInfo
 	var found bool

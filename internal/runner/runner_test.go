@@ -503,3 +503,21 @@ func TestQueuedEventLostAfterAckIsMissing(t *testing.T) {
 		t.Fatalf("summary %+v", rep.Summary)
 	}
 }
+
+// The wait for workers is one budget for the whole check, not one per event: with the workers down, verifying many
+// queued events must take about AsyncWait in total, not AsyncWait times the number of events divided by the concurrency.
+func TestWaitingForWorkersIsOneBudgetForTheWholeRun(t *testing.T) {
+	f := asyncFake(t, "pending", 1_000_000)
+	f.eventStatus = func(string, string) string { return "pending" } // no worker ever finishes anything
+	cfg := f.cfg()
+	cfg.Params.Points = 80
+	cfg.AsyncWait = 400 * time.Millisecond
+	began := time.Now()
+	rep, _ := Run(context.Background(), cfg, mustGet(t, "route"))
+	if took := time.Since(began); took > 2*time.Second {
+		t.Fatalf("80 queued events that never finish took %s to verify (10 batches of 400 ms each would be 4 s)", took)
+	}
+	if s := rep.Summary; s.NotProcessed != 80 || s.OK() {
+		t.Fatalf("every one is reported as not processed: %+v", s)
+	}
+}
