@@ -167,3 +167,19 @@ func TestRunPlanOnSeveralTenantsWithTheirOwnKeys(t *testing.T) {
 		t.Fatalf("%d %s", code, e3.String())
 	}
 }
+
+func TestCLIListsTheDevicesUsed(t *testing.T) {
+	fake := testfake.New(t)
+	var out, errb bytes.Buffer
+	code := realMain([]string{"run", "--scenario", "route", "--points", "5", "--url", fake.URL, "--key", testfake.Key}, &out, &errb)
+	text := out.String()
+	if code != 0 || !strings.Contains(text, "devices used (1):") || !strings.Contains(text, "5 requests") || !strings.Contains(text, "SIM") {
+		t.Fatalf("%d\n%s", code, text)
+	}
+	out.Reset()
+	realMain([]string{"run", "--url", fake.URL, "--load", "scenarios=load rate=60 duration=1s label=Acme key=" + testfake.Key}, &out, &errb)
+	text = out.String()
+	if !strings.Contains(text, "devices used (50):") || !strings.Contains(text, "… and 38 more") || !strings.Contains(text, "load 1 → Acme") {
+		t.Fatalf("a long list is cut with a pointer to --json:\n%s", text)
+	}
+}

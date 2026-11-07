@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -211,8 +212,8 @@ func TestPlanOnSeveralTenantsFromTheForm(t *testing.T) {
 			t.Errorf("report missing %q", want)
 		}
 	}
-	if strings.Count(body, "BioCo (") != 2 {
-		t.Errorf("a row with two keys is reported as two loads")
+	if n := len(regexp.MustCompile(`<td>BioCo \([^)]*\)</td><td>Mixed load`).FindAllString(body, -1)); n != 2 {
+		t.Errorf("a row with two keys is reported as two loads, got %d", n)
 	}
 	if strings.Contains(body, testfake.Key) || strings.Contains(body, testfake.Key[13:]) {
 		t.Fatal("a typed API key must never appear in the page")

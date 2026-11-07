@@ -59,8 +59,10 @@ type Result struct {
 	Got          *Sample  `json:"processed,omitempty"` // what the API stored for it
 	Compare      string   `json:"compare,omitempty"`   // match, differs, dropped or not stored
 	CompareNote  string   `json:"compare_note,omitempty"`
-	Load         int      `json:"load,omitempty"`   // which load of a plan sent it (1-based)
-	Key          string   `json:"-"`                // the API key it was sent with (a plan's loads may target different tenants); never shown
+	Load         int      `json:"load,omitempty"`        // which load of a plan sent it (1-based)
+	Key          string   `json:"-"`                     // the API key it was sent with (a plan's loads may target different tenants); never shown
+	DeviceIMEI   string   `json:"device_imei,omitempty"` // the device ids in the payload that was sent
+	DeviceName   string   `json:"device_name,omitempty"`
 	Queued       bool     `json:"queued,omitempty"` // the API answered 202: an async tenant, processed by a worker later
 
 	Verified     bool   `json:"verified"`
@@ -116,7 +118,8 @@ type Report struct {
 	Elapsed    time.Duration `json:"elapsed"`
 	Results    []Result      `json:"results"`
 	Summary    Summary       `json:"summary"`
-	Loads      []LoadSummary `json:"loads,omitempty"` // for a plan: what each load did
+	Loads      []LoadSummary `json:"loads,omitempty"`   // for a plan: what each load did
+	Devices    []DeviceUse   `json:"devices,omitempty"` // every simulated device the run sent for
 	Notes      []string      `json:"notes,omitempty"`
 }
 
@@ -153,6 +156,7 @@ func Run(ctx context.Context, cfg Config, sc scenario.Scenario) (*Report, error)
 	}
 	rep.Elapsed = time.Since(rep.Started)
 
+	rep.Devices = devicesOf(rep.Results, rep.Loads)
 	verified := verify(ctx, cfg, rep.Results)
 	rep.Summary = summarize(rep.Results, rep.Elapsed)
 	rep.Summary.Verified = verified - rep.Summary.LookupErrors
@@ -219,6 +223,7 @@ func execute(ctx context.Context, cfg Config, i int, st scenario.Step, keepDetai
 	if smp, ok := sampleOfRequest(st.Body); ok {
 		r.Sent = &smp
 	}
+	r.DeviceIMEI, r.DeviceName = deviceOfRequest(st.Body)
 	ack, parsed := resp.Parse()
 	if parsed {
 		r.Status, r.EventID = ack.Status, ack.EventID

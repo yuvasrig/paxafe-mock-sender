@@ -95,6 +95,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /load-row", s.loadRowHandler)
 	mux.HandleFunc("GET /runs/{id}/{n}", s.detail)
 	mux.HandleFunc("GET /runs/{id}/compare.csv", s.compareCSV)
+	mux.HandleFunc("GET /runs/{id}/devices.csv", s.devicesCSV)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
@@ -319,6 +320,29 @@ func (s *Server) compareCSV(w http.ResponseWriter, r *http.Request) {
 		_ = cw.Write([]string{strconv.Itoa(res.Index + 1), res.Name, res.EventID, res.Compare, res.CompareNote, res.StoredStatus, strings.Join(res.Flags, " "),
 			strconv.FormatInt(res.Sent.TS, 10), numStr(res.Sent.Temp, 3), numStr(got.Temp, 3),
 			numStr(res.Sent.Lat, 6), numStr(got.Lat, 6), numStr(res.Sent.Lon, 6), numStr(got.Lon, 6)})
+	}
+	cw.Flush()
+}
+
+// devicesCSV is the list of devices a run used, one row per device (and load): for pasting into the API console or a script.
+func (s *Server) devicesCSV(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	rep := s.runs[r.PathValue("id")]
+	s.mu.Unlock()
+	if rep == nil {
+		s.message(w, http.StatusNotFound, "That run is no longer available.")
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+rep.RunID+`-devices.csv"`)
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{"load", "tenant", "device_name", "imei", "requests", "acknowledged"})
+	for _, d := range rep.Devices {
+		load := ""
+		if d.Load > 0 {
+			load = strconv.Itoa(d.Load)
+		}
+		_ = cw.Write([]string{load, d.Target, d.Name, d.IMEI, strconv.Itoa(d.Requests), strconv.Itoa(d.Acknowledged)})
 	}
 	cw.Flush()
 }

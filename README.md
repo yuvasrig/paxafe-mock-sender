@@ -65,6 +65,12 @@ Scripted scenarios are replayed with a new seed on each pass, so a long load sen
 
 If the API key belongs to an **async** tenant, the webhook answers `202 {"status":"queued"}` and a worker processes the payload afterwards. The sender handles this itself: a 202 only proves the payload was acknowledged, so it follows each queued event (`GET /api/v1/events/{id}`) until a worker gives it a final status, then judges it against the scenario's expectations (final status, required flags). Events that never finish count as **not processed** (a `dead` event does too), and the run fails. `--wait` (default 1m) sets how long to wait per event; the report shows how many were queued.
 
+## Devices used
+
+Every report lists the simulated devices the run sent for: device name, IMEI (`DeviceId`), requests sent and acknowledged, and for a load plan the load and tenant each belongs to. The web report has a **Devices used** table and a CSV (`/runs/<id>/devices.csv`); the CLI prints them (the first 12, then a count; `--json` has all). Paste a name or IMEI into the API console's Payloads page (the Device filter) to see what the API stored for it.
+
+Where the ids come from: each device is made from a seed (`86` + 13 digits for the IMEI, `SIM` + 5 digits for the name), so the same seed gives the same devices. A scripted scenario inside a load starts a new device on every pass through it, and the `load` scenario uses 50 trackers per load. The malformed scenario deliberately sends a payload with no `DeviceId`; it is listed as "none sent".
+
 ## Sent vs processed report
 
 Every acknowledged event is read back from the API (`GET /api/v1/events/{id}`) and its temperature and position are compared with what this sender sent. The run report shows the counts, a table, and two charts (temperature per event, and the route as latitude against longitude: grey line = sent, blue dots = stored by the API, red ring = sent but not stored), and offers the whole comparison as a CSV (`/runs/<id>/compare.csv`). The CLI prints the counts too.

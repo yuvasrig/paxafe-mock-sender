@@ -67,6 +67,20 @@
 </div>
 {{end}}
 
+{{if $r.Devices}}
+<h3>Devices used ({{len $r.Devices}})</h3>
+<p class="muted">The simulated trackers this run sent for. Paste a name or an IMEI into the API console's Payloads page (the Device filter) to see what the API stored for it.</p>
+<div class="scroll" style="max-height:340px;overflow-y:auto">
+<table>
+  <thead><tr>{{if $r.Loads}}<th>Load</th><th>Tenant</th>{{end}}<th>Device name</th><th>IMEI (DeviceId)</th><th>Requests</th><th>Acknowledged</th></tr></thead>
+  <tbody>
+  {{range $r.Devices}}<tr>{{if $r.Loads}}<td>{{.Load}}</td><td>{{.Target}}</td>{{end}}<td><code>{{.Name}}</code></td><td>{{if .IMEI}}<code>{{.IMEI}}</code>{{else}}<span class="muted">none sent</span>{{end}}</td><td>{{.Requests}}</td><td>{{.Acknowledged}}</td></tr>{{end}}
+  </tbody>
+</table>
+</div>
+<p><a href="/runs/{{$r.RunID}}/devices.csv">Download the device list (CSV)</a></p>
+{{end}}
+
 <div class="scroll">
 <table>
   <thead><tr><th>#</th>{{if $r.Loads}}<th>Load</th>{{end}}<th>Request</th><th>HTTP</th><th>Status</th><th>Flags</th><th>ms</th><th>Check</th></tr></thead>

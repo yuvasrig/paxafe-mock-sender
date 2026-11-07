@@ -295,6 +295,26 @@ func printReport(w io.Writer, rep *runner.Report, load bool) {
 		}
 	}
 
+	if len(rep.Devices) > 0 {
+		const showDevices = 12
+		fmt.Fprintf(w, "\ndevices used (%d):\n", len(rep.Devices))
+		for i, d := range rep.Devices {
+			if i == showDevices {
+				fmt.Fprintf(w, "  … and %d more (--json lists them all)\n", len(rep.Devices)-showDevices)
+				break
+			}
+			imei := d.IMEI
+			if imei == "" {
+				imei = "(no DeviceId)"
+			}
+			where := ""
+			if d.Load > 0 {
+				where = fmt.Sprintf("  load %d → %s", d.Load, d.Target)
+			}
+			fmt.Fprintf(w, "  %-12s %-16s %5d requests%s\n", d.Name, imei, d.Requests, where)
+		}
+	}
+
 	s := rep.Summary
 	fmt.Fprintf(w, "\n%d sent · %d acknowledged · %d processed · %d rejected (expected) · %d missing", s.Sent, s.Acknowledged, s.Processed, s.ExpectedRejections, s.Missing)
 	if s.Queued > 0 {

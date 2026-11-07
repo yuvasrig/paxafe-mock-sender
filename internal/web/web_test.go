@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -184,5 +185,41 @@ func TestHealthz(t *testing.T) {
 	_, _, ts := newServer(t, "")
 	if code, body := get(t, ts.URL+"/healthz"); code != 200 || !strings.Contains(body, "ok") {
 		t.Fatalf("%d %s", code, body)
+	}
+}
+
+func TestReportListsTheDevicesAndOffersACSV(t *testing.T) {
+	_, _, ts := newServer(t, testfake.Key)
+	code, body := post(t, ts, url.Values{"scenario": {"route"}, "points": {"4"}})
+	if code != 200 {
+		t.Fatalf("%d", code)
+	}
+	for _, want := range []string{"Devices used (1)", "Device name", "IMEI (DeviceId)", "Payloads page", "/devices.csv"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("report missing %q", want)
+		}
+	}
+	m := regexp.MustCompile(`href="(/runs/[^"]+/devices\.csv)"`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatal("no CSV link")
+	}
+	resp, err := http.Get(ts.URL + m[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/csv") || len(lines) != 2 ||
+		lines[0] != "load,tenant,device_name,imei,requests,acknowledged" || !strings.HasSuffix(lines[1], ",4,4") {
+		t.Fatalf("%d %v", resp.StatusCode, lines)
+	}
+	if code, _ := get(t, ts.URL+"/runs/web-nope/devices.csv"); code != 404 {
+		t.Fatalf("unknown run: %d", code)
+	}
+	// A plan shows the tenant of each device.
+	code, body = post(t, ts, url.Values{"load1_scenarios": {"route"}, "load1_rate": {"10"}, "load1_duration": {"1"}, "load1_label": {"Acme"}, "load1_keys": {testfake.Key}, "tzoffset": {"0"}})
+	if code != 200 || !strings.Contains(body, "<th>Tenant</th><th>Device name</th>") || !strings.Contains(body, "Acme (") {
+		t.Fatalf("a plan lists each device with its load and tenant: %d", code)
 	}
 }

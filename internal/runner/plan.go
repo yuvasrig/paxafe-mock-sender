@@ -138,6 +138,7 @@ func RunPlan(ctx context.Context, cfg Config, loads []Load) (*Report, error) {
 	}
 	rep.Loads = kept
 
+	rep.Devices = devicesOf(rep.Results, rep.Loads)
 	verified := verify(ctx, cfg, rep.Results)
 	rep.Summary = summarize(rep.Results, rep.Elapsed)
 	rep.Summary.Verified = verified - rep.Summary.LookupErrors
