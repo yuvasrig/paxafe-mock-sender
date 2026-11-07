@@ -14,4 +14,4 @@ services:
       - key: SENDER_API_KEY
         sync: false         # the sender's own key (tenant reviewer); server-side only, never sent to a browser
       - key: SENDER_ACCOUNT_ID
-        value: "478"        # Tive AccountId in generated payloads; 478 is mapped to the reviewer tenant
+        value: "478"        # Tive AccountId in generated payloads (metadata only: the API routes by the key, never by AccountId)
