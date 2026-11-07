@@ -11,6 +11,11 @@
     {{end}}
   </div>
   <div class="row">
+    <label>Tenant label (optional) <input name="load{{.N}}_label" placeholder="Acme" style="width:140px" autocomplete="off"></label>
+    <label>API key(s) of the tenant(s) <input type="password" name="load{{.N}}_keys" autocomplete="off" placeholder="empty = the default key below" style="width:300px"></label>
+  </div>
+  <p class="muted" style="margin:0 0 6px">Give the keys of several tenants (separated by commas) to run this load on all of them at the same time.</p>
+  <div class="row">
     <label>Requests/s <input type="number" name="load{{.N}}_rate" value="20" min="1" max="{{rate .MaxRate}}" style="width:100px"></label>
     <label>Duration (seconds) <input type="number" name="load{{.N}}_duration" value="15" min="1" max="{{.MaxSeconds}}" style="width:110px"></label>
     <label>Start at (leave empty = now) <input type="time" step="1" name="load{{.N}}_start" style="width:140px"></label>

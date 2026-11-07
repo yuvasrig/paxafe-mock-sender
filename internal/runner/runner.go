@@ -60,6 +60,7 @@ type Result struct {
 	Compare      string   `json:"compare,omitempty"`   // match, differs, dropped or not stored
 	CompareNote  string   `json:"compare_note,omitempty"`
 	Load         int      `json:"load,omitempty"`   // which load of a plan sent it (1-based)
+	Key          string   `json:"-"`                // the API key it was sent with (a plan's loads may target different tenants); never shown
 	Queued       bool     `json:"queued,omitempty"` // the API answered 202: an async tenant, processed by a worker later
 
 	Verified     bool   `json:"verified"`
@@ -177,6 +178,14 @@ func keyFor(mode scenario.KeyMode, runKey string) string {
 		return "this-is-not-an-api-key"
 	}
 	return runKey
+}
+
+// keyOf is the key an event is read back with: the one it was sent with, so each tenant's events are looked up as that tenant.
+func keyOf(cfg Config, r Result) string {
+	if r.Key != "" {
+		return r.Key
+	}
+	return cfg.Key
 }
 
 // maxAttempts is how often a scripted step is tried when the API answers 429. A load run never retries:
@@ -371,7 +380,7 @@ func verify(ctx context.Context, cfg Config, results []Result) int {
 				awaitWorkers(ctx, cfg, &results[i])
 				return
 			}
-			info, found, err := cfg.Client.Event(ctx, cfg.Key, results[i].EventID)
+			info, found, err := cfg.Client.Event(ctx, keyOf(cfg, results[i]), results[i].EventID)
 			if err != nil {
 				results[i].LookupError = err.Error()
 				return
@@ -401,7 +410,7 @@ func awaitWorkers(ctx context.Context, cfg Config, r *Result) {
 	var found bool
 	for {
 		var err error
-		info, found, err = cfg.Client.Event(ctx, cfg.Key, r.EventID)
+		info, found, err = cfg.Client.Event(ctx, keyOf(cfg, *r), r.EventID)
 		if err != nil {
 			r.LookupError = err.Error()
 			return

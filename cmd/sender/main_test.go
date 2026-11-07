@@ -145,3 +145,25 @@ func TestRunPlanFromRepeatedLoadFlags(t *testing.T) {
 		}
 	}
 }
+
+func TestRunPlanOnSeveralTenantsWithTheirOwnKeys(t *testing.T) {
+	fake := testfake.New(t)
+	t.Setenv("SENDER_TEST_KEY", testfake.Key)
+	var out, errb bytes.Buffer
+	// No --key at all: every load brings its own, one of them from the environment.
+	code := realMain([]string{"run", "--url", fake.URL,
+		"--load", "scenarios=route rate=10 duration=1s key=env:SENDER_TEST_KEY label=Acme",
+		"--load", "scenarios=route rate=10 duration=1s keys=" + testfake.Key + " label=BioCo"}, &out, &errb)
+	text := out.String()
+	if code != 0 || !strings.Contains(text, "→ Acme (") || !strings.Contains(text, "→ BioCo (") || strings.Contains(text, testfake.Key) {
+		t.Fatalf("%d\n%s\n%s", code, text, errb.String())
+	}
+	var o2, e2 bytes.Buffer
+	if code := realMain([]string{"run", "--url", fake.URL, "--load", "scenarios=route"}, &o2, &e2); code != 2 || !strings.Contains(e2.String(), "--key") {
+		t.Fatalf("a load with no key and no --key is refused: %d %s", code, e2.String())
+	}
+	var o3, e3 bytes.Buffer
+	if code := realMain([]string{"run", "--url", fake.URL, "--load", "scenarios=route key=env:NOT_SET_ANYWHERE_XYZ"}, &o3, &e3); code != 2 || !strings.Contains(e3.String(), "NOT_SET_ANYWHERE_XYZ") {
+		t.Fatalf("%d %s", code, e3.String())
+	}
+}

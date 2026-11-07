@@ -18,9 +18,9 @@ import (
 // time when they overlap, and are reported together.
 
 const (
-	maxLoads        = 6
-	maxStartDelay   = 60 * time.Second // a load may start at most this long from now
-	maxPlanSpan     = 90 * time.Second // from now until the last load ends
+	maxLoads        = 6                // rows in the form
+	maxLoadsInPlan  = 12               // after a row with several keys is expanded to one load per key
+	maxStartDelay   = 60 * time.Second // a load may start at most this long from now; with maxLoadDuration this bounds a plan to 90 s
 	startTimeLayout = "15:04:05"
 )
 
@@ -71,7 +71,7 @@ func parsePlan(form url.Values, now time.Time) ([]runner.Load, error) {
 		if len(ids) == 0 {
 			return nil, fmt.Errorf("load %d: tick at least one scenario", k)
 		}
-		l := runner.Load{Scenarios: ids}
+		l := runner.Load{Scenarios: ids, Label: field("label")}
 		if v, err := strconv.ParseFloat(field("rate"), 64); err == nil {
 			l.Rate = clampFloat(v, 1, maxLoadRate)
 		} else {
@@ -89,7 +89,22 @@ func parsePlan(form url.Values, now time.Time) ([]runner.Load, error) {
 			}
 			l.Start = at
 		}
-		loads = append(loads, l)
+		// The keys say which tenants this row sends to; several keys make one load per tenant, all started together.
+		// They are used as typed: a value is never looked up (an env: reference works only on the CLI, where the
+		// person already owns the environment).
+		keys := strings.FieldsFunc(form.Get(fmt.Sprintf("load%d_keys", k)), func(r rune) bool { return r == ',' || r == ';' || r == ' ' || r == '\n' || r == '\r' || r == '\t' })
+		if len(keys) == 0 {
+			loads = append(loads, l) // the run's key
+			continue
+		}
+		for _, key := range keys {
+			lk := l
+			lk.Key = key
+			loads = append(loads, lk)
+		}
+	}
+	if len(loads) > maxLoadsInPlan {
+		return nil, fmt.Errorf("a plan may have at most %d loads once every key is counted (this one has %d)", maxLoadsInPlan, len(loads))
 	}
 	if len(loads) == 0 {
 		return nil, fmt.Errorf("add at least one load")
@@ -142,9 +157,11 @@ func (s *Server) runPlan(w http.ResponseWriter, r *http.Request) {
 	if key == "" {
 		key = s.DefaultKey
 	}
-	if key == "" {
-		s.message(w, http.StatusBadRequest, "No API key: enter one, or configure SENDER_API_KEY on the sender.")
-		return
+	for i, l := range loads {
+		if l.Key == "" && key == "" {
+			s.message(w, http.StatusBadRequest, fmt.Sprintf("Load generator: load %d has no API key: enter one for it, enter a default key, or configure SENDER_API_KEY on the sender.", i+1))
+			return
+		}
 	}
 	if !s.acquire() {
 		s.message(w, http.StatusConflict, "Another run is still in progress. Wait for it to finish.")

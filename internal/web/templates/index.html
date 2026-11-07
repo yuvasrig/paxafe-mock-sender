@@ -74,7 +74,7 @@
 
   <form hx-post="/run" hx-target="#results" hx-indicator="#spinner2" hx-disabled-elt="find button.go" hx-vals='js:{tzoffset: new Date().getTimezoneOffset()}'>
     <h2>Load generator</h2>
-    <p class="muted">Build a load plan. Each load has its own scenarios (tick several and requests are drawn evenly from all of them), rate, duration and start time. Loads run on their own schedules, together when they overlap, and are reported together with a line for each. Start time is a time of day on your clock; leave it empty to start now. A plan may start loads up to a minute ahead and span at most 90 seconds; use the CLI for longer runs.</p>
+    <p class="muted">Build a load plan. Each load has its own tenant (an API key; several keys run the load on every tenant at once), scenarios (tick several and requests are drawn evenly from all of them), rate, duration and start time. Loads run on their own schedules, together when they overlap, and are reported together with a line for each. Start time is a time of day on your clock; leave it empty to start now. A plan may start loads up to a minute ahead and span at most 90 seconds; use the CLI for longer runs.</p>
     <div id="loads">{{template "loadrow" .LoadRow}}</div>
     <div class="row" style="margin:10px 0">
       <button type="button" hx-get="/load-row" hx-target="#loads" hx-swap="beforeend" hx-disabled-elt="this" hx-indicator="this" hx-vals='js:{n: Math.max(0, ...[...document.querySelectorAll(".loadrow")].map(e => +e.dataset.n)) + 1}'>+ Add another load</button>
@@ -82,8 +82,8 @@
     </div>
     <div class="card">
       <div class="row">
-        <label>API key
-          <input type="password" name="key" autocomplete="off" placeholder="{{if .HasServerKey}}empty = the sender's own key{{else}}required{{end}}">
+        <label>Default API key (for loads with no key of their own)
+          <input type="password" name="key" autocomplete="off" placeholder="{{if .HasServerKey}}empty = the sender's own key{{else}}required unless every load has a key{{end}}">
         </label>
         <button type="submit" class="go">Run the plan</button><span id="spinner2" class="busy">running…</span>
       </div>

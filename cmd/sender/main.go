@@ -29,8 +29,8 @@ const usage = `usage:
   sender list                                    list scenarios
   sender run --scenario ID [flags]               run a scenario and print the results
   sender run --scenario ID,ID,... [flags]        generate load from several scenarios at once (uses --rate and --duration)
-  sender run --load "scenarios=a,b rate=20 duration=30s start=+10s" --load "..."
-                                                 a plan: each load has its own scenarios, rate, duration and start (default now)
+  sender run --load "scenarios=a,b rate=20 duration=30s start=+10s key=env:ACME_KEY" --load "..."
+                                                 a plan: each load has its own scenarios, rate, duration, start and tenant (key=, several keys = one load each)
       --url URL        API base URL           (default $API_BASE_URL)
       --key KEY        API key                (default $SENDER_API_KEY)
       --rate N         load: requests per second (default 10)
@@ -133,7 +133,7 @@ func runCmd(args []string, stdout, stderr io.Writer) int {
 	wait := fs.Duration("wait", time.Minute, "async tenants: how long to wait for workers to finish each queued event")
 	asJSON := fs.Bool("json", false, "print the full report as JSON")
 	var loadSpecs stringList
-	fs.Var(&loadSpecs, "load", "a load of a plan, repeatable: \"scenarios=route,fault rate=20 duration=30s start=+10s\" (start: now, +30s, 14:30:00 or an RFC 3339 time; default now)")
+	fs.Var(&loadSpecs, "load", "a load of a plan, repeatable: \"scenarios=route,fault rate=20 duration=30s start=+10s\" (start: now, +30s, 14:30:00 or an RFC 3339 time; default now); key=KEY or key=env:NAME picks the tenant, key=A,B runs it on both at once; label= names it")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -210,12 +210,16 @@ func runPlanCmd(specs []string, scenarioFlag, url, key string, account int64, ve
 	now := time.Now()
 	var loads []runner.Load
 	for i, spec := range specs {
-		l, err := runner.ParseLoad(spec, now)
+		ls, err := runner.ParseLoads(spec, now)
 		if err != nil {
 			fmt.Fprintf(stderr, "--load %d: %v\n", i+1, err)
 			return 2
 		}
-		loads = append(loads, l)
+		loads = append(loads, ls...)
+	}
+	everyLoadHasAKey := true
+	for _, l := range loads {
+		everyLoadHasAKey = everyLoadHasAKey && l.Key != ""
 	}
 	switch {
 	case scenarioFlag != "":
@@ -224,8 +228,8 @@ func runPlanCmd(specs []string, scenarioFlag, url, key string, account int64, ve
 	case url == "":
 		fmt.Fprintln(stderr, "--url (or API_BASE_URL) is required")
 		return 2
-	case key == "":
-		fmt.Fprintln(stderr, "--key (or SENDER_API_KEY) is required")
+	case key == "" && !everyLoadHasAKey:
+		fmt.Fprintln(stderr, "--key (or SENDER_API_KEY) is required, unless every load gives its own key=")
 		return 2
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -286,8 +290,8 @@ func printReport(w io.Writer, rep *runner.Report, load bool) {
 	if len(rep.Loads) > 0 {
 		fmt.Fprintln(w, "\nloads:")
 		for _, l := range rep.Loads {
-			fmt.Fprintf(w, "  %d  %s · %.0f/s for %.0fs · started +%.1fs · %d sent, %d failed · %.1f/s · p95 %.1f ms\n",
-				l.Index, l.Title, l.Rate, l.Duration, l.StartedAt.Sub(rep.Started).Seconds(), l.Sent, l.Failed, l.ThroughputPerSec, l.P95Ms)
+			fmt.Fprintf(w, "  %d  → %s · %s · %.0f/s for %.0fs · started +%.1fs · %d sent, %d failed · %.1f/s · p95 %.1f ms\n",
+				l.Index, l.Target, l.Title, l.Rate, l.Duration, l.StartedAt.Sub(rep.Started).Seconds(), l.Sent, l.Failed, l.ThroughputPerSec, l.P95Ms)
 		}
 	}
 

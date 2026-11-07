@@ -158,3 +158,68 @@ func TestIndexOffersThePlanBuilderAndMoreRows(t *testing.T) {
 		}
 	}
 }
+
+func TestParsePlanKeysSayWhichTenantsEachLoadSendsTo(t *testing.T) {
+	f := load(url.Values{"load1_keys": {"pxk_test_AAAAsecret"}, "load1_label": {"Acme"}})
+	f.Set("load2_scenarios", "fault")
+	f.Set("load2_rate", "5")
+	f.Set("load2_keys", "pxk_test_BBBBsecret, pxk_test_CCCCsecret\npxk_test_DDDDsecret")
+	loads, err := parsePlan(f, planNow)
+	if err != nil || len(loads) != 4 {
+		t.Fatalf("a row with three keys is three loads: %v %+v", err, loads)
+	}
+	if loads[0].Key != "pxk_test_AAAAsecret" || loads[0].Label != "Acme" {
+		t.Fatalf("%+v", loads[0])
+	}
+	for i, k := range []string{"pxk_test_BBBBsecret", "pxk_test_CCCCsecret", "pxk_test_DDDDsecret"} {
+		if l := loads[i+1]; l.Key != k || l.Rate != 5 || l.Scenarios[0] != "fault" {
+			t.Fatalf("every tenant of a row gets the same load: %+v", l)
+		}
+	}
+	if loads, _ := parsePlan(load(nil), planNow); loads[0].Key != "" {
+		t.Fatal("no key means the default key")
+	}
+	// A value is used as typed: env: is not looked up in the web form (that would read the server's environment).
+	t.Setenv("SOME_SERVER_SECRET", "hunter2")
+	loads, _ = parsePlan(load(url.Values{"load1_keys": {"env:SOME_SERVER_SECRET"}}), planNow)
+	if loads[0].Key != "env:SOME_SERVER_SECRET" {
+		t.Fatalf("the web form must not resolve environment variables: %q", loads[0].Key)
+	}
+	many := load(url.Values{"load1_keys": {strings.Repeat("k1,k2,k3,k4,k5,k6,", 1)}})
+	for _, row := range []string{"2", "3"} {
+		many.Set("load"+row+"_scenarios", "route")
+		many.Set("load"+row+"_rate", "5")
+		many.Set("load"+row+"_keys", "a,b,c,d,e")
+	}
+	if _, err := parsePlan(many, planNow); err == nil || !strings.Contains(err.Error(), "at most") {
+		t.Fatalf("too many loads once keys are counted: %v", err)
+	}
+}
+
+func TestPlanOnSeveralTenantsFromTheForm(t *testing.T) {
+	_, _, ts := newServer(t, "")
+	code, body := post(t, ts, url.Values{
+		"load1_scenarios": {"route"}, "load1_rate": {"10"}, "load1_duration": {"1"}, "load1_label": {"Acme"}, "load1_keys": {testfake.Key},
+		"load2_scenarios": {"fault"}, "load2_rate": {"10"}, "load2_duration": {"1"}, "load2_label": {"BioCo"}, "load2_keys": {testfake.Key + "," + testfake.Key},
+		"tzoffset": {"0"},
+	})
+	if code != 200 {
+		t.Fatalf("%d %s", code, body)
+	}
+	for _, want := range []string{"Loads in this plan", "<th>Tenant</th>", "Acme (", "BioCo ("} {
+		if !strings.Contains(body, want) {
+			t.Errorf("report missing %q", want)
+		}
+	}
+	if strings.Count(body, "BioCo (") != 2 {
+		t.Errorf("a row with two keys is reported as two loads")
+	}
+	if strings.Contains(body, testfake.Key) || strings.Contains(body, testfake.Key[13:]) {
+		t.Fatal("a typed API key must never appear in the page")
+	}
+	// A load with no key and no default is refused, naming the load.
+	code, body = post(t, ts, url.Values{"load1_scenarios": {"route"}, "load1_rate": {"5"}})
+	if code != 400 || !strings.Contains(body, "load 1 has no API key") {
+		t.Fatalf("%d %s", code, body)
+	}
+}

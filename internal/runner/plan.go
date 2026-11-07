@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,6 +15,10 @@ import (
 
 // Load is one load in a plan: the scenarios its requests are drawn from, how fast, for how long, and when it starts.
 type Load struct {
+	// Key is the API key this load sends with, so each load can target a different tenant. Empty uses the run's key.
+	// It is used for this run only and never shown. Label names the load in the report (default: the key's prefix).
+	Key       string
+	Label     string
 	Scenarios []string      // one or more scenario ids; requests are drawn evenly from them
 	Rate      float64       // requests per second
 	Duration  time.Duration // how long it runs
@@ -22,7 +27,8 @@ type Load struct {
 
 // LoadSummary is what one load of a plan did.
 type LoadSummary struct {
-	Index            int       `json:"index"` // 1-based
+	Index            int       `json:"index"`  // 1-based
+	Target           string    `json:"target"` // the label or key prefix of the tenant this load sent to
 	Title            string    `json:"title"`
 	Rate             float64   `json:"rate"`
 	Duration         float64   `json:"duration_seconds"`
@@ -65,6 +71,9 @@ func RunPlan(ctx context.Context, cfg Config, loads []Load) (*Report, error) {
 		if l.Rate <= 0 || l.Duration <= 0 {
 			return nil, fmt.Errorf("load %d: rate and duration must be above zero", i+1)
 		}
+		if l.Key == "" && cfg.Key == "" {
+			return nil, fmt.Errorf("load %d: no API key (give the load a key, or the run one)", i+1)
+		}
 		scs[i] = sc
 	}
 
@@ -92,13 +101,17 @@ func RunPlan(ctx context.Context, cfg Config, loads []Load) (*Report, error) {
 			lc.Params.Rate, lc.Params.Duration = l.Rate, l.Duration
 			lc.Params.Seed = cfg.Params.Seed + int64(i)*104729 // each load has its own simulated trackers
 			lc.RunID = fmt.Sprintf("%s-L%d", cfg.RunID, i+1)
+			if l.Key != "" {
+				lc.Key = l.Key
+			}
 			ran := time.Now()
 			res := runLoad(ctx, lc, scs[i])
 			for j := range res {
 				res[j].Load = i + 1
+				res[j].Key = lc.Key
 			}
 			results[i] = res
-			summaries[i] = loadSummary(i+1, scs[i].Title, l, ran, time.Since(ran), res)
+			summaries[i] = loadSummary(i+1, scs[i].Title, l, lc.Key, ran, time.Since(ran), res)
 		}(i)
 	}
 	wg.Wait()
@@ -144,8 +157,8 @@ func planTitle(loads []Load) string {
 	return fmt.Sprintf("Load plan: %d loads", len(loads))
 }
 
-func loadSummary(index int, title string, l Load, at time.Time, took time.Duration, res []Result) LoadSummary {
-	s := LoadSummary{Index: index, Title: title, Rate: l.Rate, Duration: l.Duration.Seconds(), StartedAt: at, Sent: len(res)}
+func loadSummary(index int, title string, l Load, key string, at time.Time, took time.Duration, res []Result) LoadSummary {
+	s := LoadSummary{Index: index, Target: l.Target(key), Title: title, Rate: l.Rate, Duration: l.Duration.Seconds(), StartedAt: at, Sent: len(res)}
 	var lat []float64
 	for _, r := range res {
 		if !r.Pass {
@@ -163,19 +176,28 @@ func loadSummary(index int, title string, l Load, at time.Time, took time.Durati
 	return s
 }
 
-// ParseLoad reads one load written as words, for the CLI: "scenarios=route,fault rate=20 duration=30s start=+10s".
+// ParseLoads reads one load written as words, for the CLI: "scenarios=route,fault rate=20 duration=30s start=+10s".
 // scenarios is required; rate defaults to 10 a second, duration to 10s, and start to now. A start is "now", an offset
 // from now ("+30s"), a time of day on this machine's clock ("14:30" or "14:30:15", today) or an RFC 3339 time.
-func ParseLoad(spec string, now time.Time) (Load, error) {
+//
+// key (or keys, comma separated) says which tenant the load sends to, by API key. A key may be written env:NAME to read
+// it from an environment variable, so a secret need not appear in the command line. Several keys give one load per key,
+// all with the same scenarios, rate, duration and start, which is how one spec triggers the same load on several tenants
+// at once. With no key the load uses the run's key. label names the load in the report.
+func ParseLoads(spec string, now time.Time) ([]Load, error) {
 	l := Load{Rate: 10, Duration: 10 * time.Second}
+	var keys []string
 	seen := map[string]bool{}
 	for _, field := range strings.Fields(spec) {
 		k, v, ok := strings.Cut(field, "=")
 		if !ok || v == "" {
-			return Load{}, fmt.Errorf("%q: write it as key=value (scenarios, rate, duration, start)", field)
+			return nil, fmt.Errorf("%q: write it as key=value (scenarios, rate, duration, start, key, label)", field)
+		}
+		if k == "key" {
+			k = "keys"
 		}
 		if seen[k] {
-			return Load{}, fmt.Errorf("%s given twice", k)
+			return nil, fmt.Errorf("%s given twice", k)
 		}
 		seen[k] = true
 		switch k {
@@ -188,29 +210,64 @@ func ParseLoad(spec string, now time.Time) (Load, error) {
 		case "rate":
 			f, err := strconv.ParseFloat(v, 64)
 			if err != nil || f <= 0 {
-				return Load{}, fmt.Errorf("rate %q must be a number above zero", v)
+				return nil, fmt.Errorf("rate %q must be a number above zero", v)
 			}
 			l.Rate = f
 		case "duration":
 			d, err := time.ParseDuration(v)
 			if err != nil || d <= 0 {
-				return Load{}, fmt.Errorf("duration %q must be like 30s or 2m", v)
+				return nil, fmt.Errorf("duration %q must be like 30s or 2m", v)
 			}
 			l.Duration = d
 		case "start":
 			at, err := parseStart(v, now)
 			if err != nil {
-				return Load{}, err
+				return nil, err
 			}
 			l.Start = at
+		case "label":
+			l.Label = v
+		case "keys":
+			for _, ref := range strings.Split(v, ",") {
+				key, err := resolveKey(strings.TrimSpace(ref))
+				if err != nil {
+					return nil, err
+				}
+				keys = append(keys, key)
+			}
 		default:
-			return Load{}, fmt.Errorf("unknown key %q (use scenarios, rate, duration, start)", k)
+			return nil, fmt.Errorf("unknown key %q (use scenarios, rate, duration, start, key, label)", k)
 		}
 	}
 	if len(l.Scenarios) == 0 {
-		return Load{}, fmt.Errorf("scenarios is required, for example scenarios=route,fault")
+		return nil, fmt.Errorf("scenarios is required, for example scenarios=route,fault")
 	}
-	return l, nil
+	if len(keys) == 0 {
+		return []Load{l}, nil
+	}
+	out := make([]Load, 0, len(keys))
+	for _, key := range keys {
+		lk := l
+		lk.Key = key
+		out = append(out, lk)
+	}
+	return out, nil
+}
+
+// resolveKey returns an API key, reading it from the environment when written env:NAME. The key itself is never put in
+// an error message.
+func resolveKey(ref string) (string, error) {
+	if ref == "" {
+		return "", fmt.Errorf("an empty key")
+	}
+	if name, ok := strings.CutPrefix(ref, "env:"); ok {
+		v := strings.TrimSpace(os.Getenv(name))
+		if v == "" {
+			return "", fmt.Errorf("the environment variable %s is not set", name)
+		}
+		return v, nil
+	}
+	return ref, nil
 }
 
 func parseStart(v string, now time.Time) (time.Time, error) {
@@ -238,4 +295,27 @@ func parseStart(v string, now time.Time) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("start %q: use now, +30s, a time of day like 14:30:00, or an RFC 3339 time", v)
+}
+
+// KeyPrefix is the start of an API key that is safe to show: the type and the first characters, as the API itself lists
+// keys. The rest of the key is never shown.
+func KeyPrefix(key string) string {
+	const shown = 13 // "pxk_test_" and four more characters
+	if len(key) <= shown {
+		return "key " + strings.Repeat("*", 4)
+	}
+	return key[:shown] + "…"
+}
+
+// Target names what a load sends to in the report: its label, with the key's prefix, or just the prefix.
+func (l Load) Target(key string) string {
+	switch {
+	case l.Label != "" && key != "":
+		return l.Label + " (" + KeyPrefix(key) + ")"
+	case l.Label != "":
+		return l.Label
+	case key != "":
+		return KeyPrefix(key)
+	}
+	return "run's key"
 }
